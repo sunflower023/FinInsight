@@ -1,0 +1,36 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 27, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "win-dev",
+      "displayName": "Windows Dev",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/win-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.7.3/msvc2022_64"
+      }
+    },
+    {
+      "name": "win-release",
+      "displayName": "Windows Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/win-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.7.3/msvc2022_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win-dev",
+      "configurePreset": "win-dev"
+    },
+    {
+      "name": "win-release",
+      "configurePreset": "win-release"
+    }
+  ]
+}
