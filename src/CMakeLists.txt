@@ -4,6 +4,13 @@ set(SOURCES
     app/MainWindow.cpp
     core/AppConfig.h
     core/AppConfig.cpp
+    storage/Migration.h
+    storage/Database.h
+    storage/Database.cpp
+    storage/BaseRepository.h
+    storage/StockRepository.h
+    storage/StockRepository.cpp
+    storage/migrations/V001_Initial.h
 )
 
 qt_add_executable(FinInsight ${SOURCES})

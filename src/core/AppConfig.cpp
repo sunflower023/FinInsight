@@ -14,7 +14,10 @@ QString AppConfig::databasePath() const
     if (!db_path_.isEmpty())
         return db_path_;
 
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    // 使用 GenericDataLocation 获取 %LOCALAPPDATA%，
+    // 比 AppLocalDataLocation 更可靠（不依赖 QApplication 命名）。
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    const QString dir  = base + "/FinInsight";
     QDir().mkpath(dir);
     return dir + "/fininsight.db";
 }
@@ -24,14 +27,16 @@ QString AppConfig::cachePath() const
     if (!cache_path_.isEmpty())
         return cache_path_;
 
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    const QString dir  = base + "/FinInsight/cache";
     QDir().mkpath(dir);
     return dir;
 }
 
 QString AppConfig::dataPath() const
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    return base + "/FinInsight";
 }
 
 void AppConfig::setDatabasePath(const QString &path)
