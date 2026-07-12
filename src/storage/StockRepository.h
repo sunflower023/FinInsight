@@ -36,10 +36,11 @@ public:
     bool updatePrice(const QString& symbol, double price);
 
 protected:
-    Stock   fromSqlQuery(const QSqlQuery& q)   const override;
-    void    bindInsert(QSqlQuery& q, const Stock& s) const override;
-    void    bindUpdate(QSqlQuery& q, const Stock& s) const override;
-    QStringList columns() const override;
+    Stock       fromSqlQuery(const QSqlQuery& q)   const override;
+    void        bindInsert(QSqlQuery& q, const Stock& s) const override;
+    void        bindUpdate(QSqlQuery& q, const Stock& s) const override;
+    QStringList columns()  const override;
+    int         entityId(const Stock& s)      const override { return s.id; }
 };
 
 } // namespace fininsight::storage

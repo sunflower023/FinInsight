@@ -11,6 +11,15 @@ set(SOURCES
     storage/StockRepository.h
     storage/StockRepository.cpp
     storage/migrations/V001_Initial.h
+    network/HttpClient.h
+    network/HttpClient.cpp
+    datahub/QuoteData.h
+    datahub/DataHub.h
+    datahub/DataHub.cpp
+    datahub/YahooProducer.h
+    datahub/YahooProducer.cpp
+    datahub/EastMoneyProducer.h
+    datahub/EastMoneyProducer.cpp
 )
 
 qt_add_executable(FinInsight ${SOURCES})

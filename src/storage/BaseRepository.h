@@ -113,7 +113,7 @@ public:
                       .arg(table_, sets));
 
         bindUpdate(q, entity);
-        q.addBindValue(/*id 作为最后一个参数*/);
+        q.addBindValue(entityId(entity));
 
         if (!q.exec()) {
             qWarning() << "[BaseRepository] UPDATE failed:"
@@ -145,6 +145,9 @@ protected:
 
     /// 返回实体对应的列名列表（不含 id，按 insert/update 顺序）
     virtual QStringList columns() const = 0;
+
+    /// 返回实体的主键 id（用于 UPDATE SET ... WHERE id = ?）
+    virtual int entityId(const T& entity) const = 0;
 
     // ── 内部辅助 ─────────────────────────────────────
 
