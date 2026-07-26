@@ -20,6 +20,27 @@ set(SOURCES
     datahub/YahooProducer.cpp
     datahub/EastMoneyProducer.h
     datahub/EastMoneyProducer.cpp
+    charts/IndicatorEngine.h
+    charts/IndicatorEngine.cpp
+    charts/KLineChart.h
+    charts/KLineChart.cpp
+    panels/StockSearchBar.h
+    panels/StockSearchBar.cpp
+    panels/StockListPanel.h
+    panels/StockListPanel.cpp
+    panels/DetailPanel.h
+    panels/DetailPanel.cpp
+    panels/PortfolioPanel.h
+    panels/PortfolioPanel.cpp
+    dsl/Token.h
+    dsl/Lexer.h
+    dsl/Lexer.cpp
+    dsl/Parser.h
+    dsl/Parser.cpp
+    dsl/Evaluator.h
+    dsl/Evaluator.cpp
+    datahub/Aggregator.h
+    datahub/Aggregator.cpp
 )
 
 qt_add_executable(FinInsight ${SOURCES})
@@ -31,6 +52,7 @@ target_link_libraries(FinInsight PRIVATE
     Qt6::Charts
     Qt6::Network
     Qt6::Sql
+    Qt6::Concurrent
     qtadvanceddocking-qt6
     nlohmann_json::nlohmann_json
 )

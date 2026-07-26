@@ -39,7 +39,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # ── Qt6 ────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS Widgets Charts Network Sql)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Charts Network Sql Concurrent)
 
 # ── 子目录 ─────────────────────────────────────────────
 add_subdirectory(src)
