@@ -1,5 +1,7 @@
 # FinInsight 项目设计文档
 
+> 注意：本文包含目标架构和演进设想。当前可运行范围以 [`QUICKSTART.md`](QUICKSTART.md) 和 `agent/PROJECT_CONTEXT.md` 为准；文中 EventBus、WebSocket、完整组合交易等内容并不代表已经接入主流程。
+
 > C++20 / Qt6 桌面金融数据终端 — 架构设计与模块说明
 
 ---

@@ -74,7 +74,7 @@ double Evaluator::visit(const IdentifierExpr& e) {
     if (name == "MACD")   return getMACDLine();
     if (name == "Signal") return getMACDSignal();
     if (name == "RSI") {
-        if (closes_.size() < 14) return 50.0;
+        if (closes_.size() <= 14) return 50.0;
         auto rsi = computeRSI(closes_, 14);
         return getLatest(rsi);
     }

@@ -31,7 +31,7 @@
 | 构建系统 | CMake 3.27 + Ninja |
 | 数据库 | SQLite（WAL 模式） |
 | 包管理 | CMake FetchContent（Qt ADS / nlohmann json） |
-| 数据源 | Yahoo Finance / AkShare |
+| 数据源 | Yahoo Finance（主流程）/ EastMoney / Sina（独立适配器） |
 | 平台 | Windows x64（可扩展 Linux/macOS） |
 
 ---
@@ -43,7 +43,7 @@ FinInsight/
 ├── src/
 │   ├── main.cpp              # 应用入口
 │   ├── app/                  # 主窗口与面板管理
-│   ├── core/                 # 核心抽象层（EventBus / DataHub / AppConfig）
+│   ├── core/                 # 核心基础设施（AppConfig）
 │   ├── storage/              # 数据持久化（SQLite / Repository 模板 / 迁移）
 │   ├── datahub/              # 数据管道（发布订阅 / 数据源生产者）
 │   ├── network/              # 网络通信（HTTP / WebSocket）
@@ -53,7 +53,7 @@ FinInsight/
     └── icons/
 ```
 
-**设计模式：** Singleton / Repository / Pub-Sub / Strategy / Producer-Consumer
+**当前使用的主要模式：** Singleton / Repository / Pub-Sub。Strategy 和 Producer-Consumer 属于后续演进方向。
 
 ---
 
@@ -93,14 +93,20 @@ cd FinInsight
 | 主窗口 + 可拖拽面板 | Qt ADS 实现可拖拽停靠布局 | ✅ |
 | 全局配置管理 | AppConfig 单例，管理数据/缓存路径 | ✅ |
 | SQLite 数据层 | WAL 模式 + Repository 模板 + 版本迁移 | ✅ |
-| 多源数据管道 | Yahoo / EastMoney / Sina 竞争获取 | ✅ |
+| 多源数据管道 | Yahoo / EastMoney / Sina 适配器；聚合器为原型 | 部分 |
 | DataHub 发布订阅 | 通配符匹配 + 线程安全推送 | ✅ |
-| K 线图 + 技术指标 | 7 大指标 (MACD/RSI/KDJ/BOLL 等) | ✅ |
-| DSL 表达式引擎 | 手写递归下降 Parser + AST 求值 | ✅ |
-| 多源聚合器 | QtConcurrent 竞争 + 回退机制 | ✅ |
-| 自选股 / 详情 / 组合 | StockList + Detail + Portfolio 面板 | ✅ |
+| K 线图 + 技术指标 | MA/BOLL 已接入；其他指标为算法模块 | 部分 |
+| DSL 表达式引擎 | 递归下降 Parser + AST 求值，尚未接入回测 | 独立模块 |
+| 多源聚合器 | QtConcurrent 原型，尚未达到真正 first-valid | 原型 |
+| 自选股 / 详情 / 组合 | StockList + Detail 已接入；Portfolio 为 UI 原型 | 部分 |
 | WebSocket 实时推送 | 实时行情（规划中） | 💡 |
 | AI Agent 集成 | LLM 工具调用（规划中） | 💡 |
+
+## 快速上手
+
+第一次阅读项目，建议从 [`docs/QUICKSTART.md`](docs/QUICKSTART.md) 开始。该文档包含启动时序、数据流 Mermaid 图、模块职责和常见修改入口。
+
+后续 agent 开发约定和项目事实沉淀在 [`agent/README.md`](agent/README.md)。
 
 ---
 

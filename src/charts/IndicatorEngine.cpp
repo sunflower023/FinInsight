@@ -31,7 +31,7 @@ std::vector<double> computeSMA(const std::vector<double>& data, int period) {
 }
 
 std::vector<double> computeEMA(const std::vector<double>& data, int period) {
-    if (period <= 0 || data.empty()) return {};
+    if (period <= 0 || data.empty() || data.size() < static_cast<size_t>(period)) return {};
 
     std::vector<double> result(data.size(), 0.0);
     const double alpha = 2.0 / (period + 1.0);
@@ -50,7 +50,7 @@ std::vector<double> computeEMA(const std::vector<double>& data, int period) {
 // ═══════════════════════════════════════════════════════
 
 std::vector<double> computeRSI(const std::vector<double>& closes, int period) {
-    if (closes.empty() || period <= 0) return {};
+    if (closes.empty() || period <= 0 || closes.size() <= static_cast<size_t>(period)) return {};
 
     std::vector<double> result(closes.size(), 0.0);
 
@@ -86,6 +86,7 @@ std::vector<double> computeRSI(const std::vector<double>& closes, int period) {
 std::vector<double> computeOBV(const std::vector<double>& closes,
                                 const std::vector<double>& volumes) {
     size_t n = std::min(closes.size(), volumes.size());
+    if (n == 0) return {};
     std::vector<double> result(n, 0.0);
 
     result[0] = volumes[0];
@@ -107,15 +108,13 @@ std::vector<double> computeOBV(const std::vector<double>& closes,
 MACDResult computeMACD(const std::vector<double>& closes,
                         int fast, int slow, int signalPeriod) {
     MACDResult r;
-    if (closes.empty()) return r;
+    if (closes.empty() || fast <= 0 || slow <= 0 || signalPeriod <= 0 ||
+        fast >= slow || closes.size() < static_cast<size_t>(slow)) return r;
 
     auto emaFast   = computeEMA(closes, fast);
     auto emaSlow   = computeEMA(closes, slow);
 
-    size_t start = std::max({0, slow - 1, static_cast<int>(closes.size()) - 1});
     // 从第一个两个 EMA 都有效的位置开始
-    if (closes.size() <= static_cast<size_t>(slow)) return r;
-
     r.line.resize(closes.size(), 0.0);
     for (size_t i = slow - 1; i < closes.size(); ++i) {
         r.line[i] = emaFast[i] - emaSlow[i];
@@ -166,13 +165,14 @@ KDJResult computeKDJ(const std::vector<double>& highs,
                       int period, int kPeriod, int dPeriod) {
     KDJResult r;
     size_t n = std::min({highs.size(), lows.size(), closes.size()});
-    if (n == 0) return r;
+    if (n == 0 || period <= 0 || n < static_cast<size_t>(period)) return r;
 
     r.k.resize(n, 50.0);
     r.d.resize(n, 50.0);
     r.j.resize(n, 50.0);
 
-    for (size_t i = period - 1; i < n; ++i) {
+    const size_t first = static_cast<size_t>(period - 1);
+    for (size_t i = first; i < n; ++i) {
         // 找 period 内的最高价和最低价
         double highest = *std::max_element(highs.begin() + i - period + 1,
                                             highs.begin() + i + 1);
@@ -183,9 +183,11 @@ KDJResult computeKDJ(const std::vector<double>& highs,
         double rsv = (highest == lowest) ? 50.0
             : (closes[i] - lowest) / (highest - lowest) * 100.0;
 
-        if (i == static_cast<size_t>(period - 1)) {
+        if (i == first) {
             r.k[i] = 50.0;
             r.d[i] = 50.0;
+            r.j[i] = 50.0;
+            continue;
         }
 
         // K = 2/3 × prev_K + 1/3 × RSV

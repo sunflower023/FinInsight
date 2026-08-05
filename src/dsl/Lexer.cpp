@@ -43,12 +43,18 @@ QVector<Token> Lexer::tokenize(const QString& input) {
                 result.append({TokenType::Eq, "=="});
                 ++pos_;
             }
+            else {
+                qWarning() << "[Lexer] Unexpected single '='";
+            }
         }
         else if (c == '!') {
             ++pos_;
             if (pos_ < end_ && *pos_ == '=') {
                 result.append({TokenType::Neq, "!="});
                 ++pos_;
+            }
+            else {
+                qWarning() << "[Lexer] Unexpected single '!'";
             }
         }
         else if (c == '(') {

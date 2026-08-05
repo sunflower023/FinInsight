@@ -6,15 +6,22 @@ namespace fininsight::dsl {
 Parser::Parser(const QVector<Token>& tokens) : tokens_(tokens) {}
 
 AstNode Parser::parse() {
-    return expression();
+    auto result = expression();
+    if (!hasError() && peek().type != TokenType::Eof) {
+        error_ = "Unexpected token: " + peek().toString();
+    }
+    return result;
 }
 
 Token Parser::peek() const {
+    if (pos_ >= tokens_.size()) return {TokenType::Eof, {}};
     return tokens_[pos_];
 }
 
 Token Parser::advance() {
-    return tokens_[pos_++];
+    auto token = peek();
+    if (pos_ < tokens_.size()) ++pos_;
+    return token;
 }
 
 bool Parser::match(TokenType t) {
@@ -88,7 +95,7 @@ AstNode Parser::atom() {
     }
 
     if (match(TokenType::Number)) {
-        return NumberExpr{static_cast<double>(tokens_[pos_-1].text.toInt())};
+        return NumberExpr{tokens_[pos_-1].text.toDouble()};
     }
 
     if (peek().type == TokenType::Identifier) {
