@@ -41,25 +41,38 @@ void EastMoneyProducer::fetchQuote(const QString& symbol) {
     const QString url   = buildUrl(secid);
 
     qInfo() << "[EastMoney] Fetching:" << symbol << "secid:" << secid;
+    ++pendingCount_;
 
-    QByteArray json = fininsight::network::HttpClient::instance().get(url, 5000);
-    if (json.isEmpty()) {
-        qWarning() << "[EastMoney] Empty response for:" << symbol;
-        emit errorOccurred(symbol, "Empty response");
-        return;
+    const auto requestId = fininsight::network::HttpClient::instance().getAsync(
+        url, this,
+        [this, symbol](const fininsight::network::HttpResponse& response) {
+            --pendingCount_;
+            if (!response.isSuccess()) {
+                qWarning() << "[EastMoney] Request failed:" << symbol << response.error;
+                emit errorOccurred(symbol, response.error);
+                return;
+            }
+            if (response.body.isEmpty()) {
+                emit errorOccurred(symbol, "Empty response");
+                return;
+            }
+
+            QuoteData quote = parseResponse(response.body, symbol);
+            if (!quote.isValid()) {
+                emit errorOccurred(symbol, "Parse failed");
+                return;
+            }
+
+            DataHub::instance().publishQuote(quote);
+            emit quoteReady(quote);
+
+            qInfo() << "[EastMoney]" << symbol << quote.name
+                    << quote.price << quote.changePercent << "%";
+        });
+    if (requestId == fininsight::network::HttpClient::InvalidRequestId) {
+        --pendingCount_;
+        emit errorOccurred(symbol, "Failed to start HTTP request");
     }
-
-    QuoteData quote = parseResponse(json, symbol);
-    if (!quote.isValid()) {
-        emit errorOccurred(symbol, "Parse failed");
-        return;
-    }
-
-    DataHub::instance().publishQuote(quote);
-    emit quoteReady(quote);
-
-    qInfo() << "[EastMoney]" << symbol << quote.name
-            << quote.price << quote.changePercent << "%";
 }
 
 // ── JSON 解析 ───────────────────────────────────────

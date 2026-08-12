@@ -38,41 +38,52 @@ QString YahooProducer::buildKLineUrl(const QString& symbol,
 void YahooProducer::fetchQuote(const QString& symbol) {
     const QString url = buildQuoteUrl(symbol);
     qInfo() << "[Yahoo] Fetching quote:" << symbol;
+    ++pendingCount_;
 
-    QByteArray json = fininsight::network::HttpClient::instance().get(url);
-    if (json.isEmpty()) {
-        qWarning() << "[Yahoo] Empty response for:" << symbol;
-        emit errorOccurred(symbol, "Empty response");
-        return;
+    const auto requestId = fininsight::network::HttpClient::instance().getAsync(
+        url, this,
+        [this, symbol](const fininsight::network::HttpResponse& response) {
+            --pendingCount_;
+            if (!response.isSuccess()) {
+                qWarning() << "[Yahoo] Quote request failed:" << symbol << response.error;
+                emit errorOccurred(symbol, response.error);
+                return;
+            }
+            if (response.body.isEmpty()) {
+                emit errorOccurred(symbol, "Empty response");
+                return;
+            }
+
+            QuoteData quote = parseQuote(response.body, symbol);
+            if (!quote.isValid()) {
+                emit errorOccurred(symbol, "Failed to parse quote");
+                return;
+            }
+
+            storage::Stock stock;
+            stock.symbol    = symbol;
+            stock.name      = quote.name;
+            stock.exchange  = quote.exchange;
+            stock.currency  = quote.currency;
+            stock.lastPrice = quote.price;
+            stock.updatedAt = QDateTime::currentSecsSinceEpoch();
+            auto existing = stockRepo_.findBySymbol(symbol);
+            if (existing) {
+                stock.id = existing->id;
+                stockRepo_.update(stock);
+            } else {
+                stockRepo_.insert(stock);
+            }
+
+            DataHub::instance().publishQuote(quote);
+            emit quoteReady(quote);
+
+            qInfo() << "[Yahoo] Quote:" << symbol << quote.price;
+        });
+    if (requestId == fininsight::network::HttpClient::InvalidRequestId) {
+        --pendingCount_;
+        emit errorOccurred(symbol, "Failed to start HTTP request");
     }
-
-    QuoteData quote = parseQuote(json, symbol);
-    if (!quote.isValid()) {
-        emit errorOccurred(symbol, "Failed to parse quote");
-        return;
-    }
-
-    // 写入数据库缓存
-    storage::Stock stock;
-    stock.symbol    = symbol;
-    stock.name      = quote.name;
-    stock.exchange  = quote.exchange;
-    stock.currency  = quote.currency;
-    stock.lastPrice = quote.price;
-    stock.updatedAt = QDateTime::currentSecsSinceEpoch();
-    auto existing = stockRepo_.findBySymbol(symbol);
-    if (existing) {
-        stock.id = existing->id;
-        stockRepo_.update(stock);
-    } else {
-        stockRepo_.insert(stock);
-    }
-
-    // 发布到 DataHub
-    DataHub::instance().publishQuote(quote);
-    emit quoteReady(quote);
-
-    qInfo() << "[Yahoo] Quote:" << symbol << quote.price;
 }
 
 // ── 拉取 K 线 ───────────────────────────────────────
@@ -80,23 +91,37 @@ void YahooProducer::fetchQuote(const QString& symbol) {
 void YahooProducer::fetchKLine(const QString& symbol, const QString& range) {
     const QString url = buildKLineUrl(symbol, range);
     qInfo() << "[Yahoo] Fetching K-line:" << symbol << "range:" << range;
+    ++pendingCount_;
 
-    QByteArray json = fininsight::network::HttpClient::instance().get(url);
-    if (json.isEmpty()) {
-        emit errorOccurred(symbol, "Empty K-line response");
-        return;
+    const auto requestId = fininsight::network::HttpClient::instance().getAsync(
+        url, this,
+        [this, symbol](const fininsight::network::HttpResponse& response) {
+            --pendingCount_;
+            if (!response.isSuccess()) {
+                qWarning() << "[Yahoo] K-line request failed:" << symbol << response.error;
+                emit errorOccurred(symbol, response.error);
+                return;
+            }
+            if (response.body.isEmpty()) {
+                emit errorOccurred(symbol, "Empty K-line response");
+                return;
+            }
+
+            QVector<KLineData> klines = parseKLine(response.body, symbol);
+            if (klines.isEmpty()) {
+                emit errorOccurred(symbol, "Failed to parse K-line data");
+                return;
+            }
+
+            DataHub::instance().publishKLine(symbol, klines);
+            emit klineReady(symbol, klines);
+
+            qInfo() << "[Yahoo] K-line:" << symbol << klines.size() << "bars";
+        });
+    if (requestId == fininsight::network::HttpClient::InvalidRequestId) {
+        --pendingCount_;
+        emit errorOccurred(symbol, "Failed to start HTTP request");
     }
-
-    QVector<KLineData> klines = parseKLine(json, symbol);
-    if (klines.isEmpty()) {
-        emit errorOccurred(symbol, "Failed to parse K-line data");
-        return;
-    }
-
-    DataHub::instance().publishKLine(symbol, klines);
-    emit klineReady(symbol, klines);
-
-    qInfo() << "[Yahoo] K-line:" << symbol << klines.size() << "bars";
 }
 
 // ── 拉取并缓存 ──────────────────────────────────────

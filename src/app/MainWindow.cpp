@@ -225,6 +225,7 @@ MainWindow::MainWindow(QWidget* parent)
         ->setStyleSheet(QLatin1String(kGlobalStyle));
 
     setupUi();
+    yahoo_producer_ = new fininsight::datahub::YahooProducer(this);
     setupDataConnection("AAPL");
 }
 
@@ -362,9 +363,8 @@ void MainWindow::setupDataConnection(const QString& symbol)
         });
 
     // 拉取数据
-    fininsight::datahub::YahooProducer yahoo;
-    yahoo.fetchOrCache(symbol);
-    yahoo.fetchKLine(symbol, "6mo");
+    yahoo_producer_->fetchOrCache(symbol);
+    yahoo_producer_->fetchKLine(symbol, "6mo");
 }
 
 void MainWindow::onSearchRequested(const QString& symbol)

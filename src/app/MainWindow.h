@@ -10,6 +10,9 @@ class QLabel;
 namespace fininsight::charts {
 class KLineChart;
 }
+namespace fininsight::datahub {
+class YahooProducer;
+}
 namespace fininsight::panels {
 class StockSearchBar;
 class StockListPanel;
@@ -41,6 +44,7 @@ private:
     QLabel* status_symbol_ = nullptr;
     QLabel* status_price_  = nullptr;
     fininsight::charts::KLineChart*    kline_chart_    = nullptr;
+    fininsight::datahub::YahooProducer* yahoo_producer_ = nullptr;
     fininsight::panels::StockSearchBar* search_bar_     = nullptr;
     fininsight::panels::StockListPanel* stock_list_     = nullptr;
     fininsight::panels::DetailPanel*    detail_panel_   = nullptr;

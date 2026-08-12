@@ -1,177 +1,233 @@
 #include "datahub/Aggregator.h"
 #include "datahub/DataHub.h"
-#include "network/HttpClient.h"
 
+#include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
-#include <QElapsedTimer>
-#include <QtConcurrent/QtConcurrent>
-#include <QDebug>
+#include <QRegularExpression>
+#include <QtGlobal>
+
+#include <algorithm>
 
 namespace fininsight::datahub {
 namespace net = fininsight::network;
 
-Aggregator::Aggregator(QObject* parent) : QObject(parent) {}
+Aggregator::Aggregator(QObject* parent)
+    : QObject(parent)
+{}
 
-// ── 竞速择优 ────────────────────────────────────────
+quint64 Aggregator::createState(const QString& symbol, bool bestOnly, int timeoutMs)
+{
+    const quint64 id = nextStateId_++;
+    AggregateState state;
+    state.id = id;
+    state.symbol = symbol;
+    state.bestOnly = bestOnly;
+    state.elapsed.start();
+    state.timeoutTimer = new QTimer(this);
+    state.timeoutTimer->setSingleShot(true);
+    connect(state.timeoutTimer, &QTimer::timeout, this, [this, id]() {
+        finishState(id, "Aggregate request timed out");
+    });
+    states_.insert(id, std::move(state));
+    states_[id].timeoutTimer->start(qMax(1, timeoutMs));
+    return id;
+}
 
 void Aggregator::fetchBest(const QString& symbol,
-                            std::function<void(QuoteData)> onDone,
-                            int timeoutMs)
+                           std::function<void(QuoteData)> onDone,
+                           int timeoutMs)
 {
-    // 并发发起三路请求
-    QFuture<QuoteData> f1 = QtConcurrent::run(
-        [this, symbol] { return fetchFromYahoo(symbol); });
-    QFuture<QuoteData> f2 = QtConcurrent::run(
-        [this, symbol] { return fetchFromEastMoney(symbol); });
-    QFuture<QuoteData> f3 = QtConcurrent::run(
-        [this, symbol] { return fetchFromSina(symbol); });
+    const QString normalized = symbol.trimmed().toUpper();
+    if (normalized.isEmpty()) {
+        emit errorOccurred(symbol, "Symbol is empty");
+        return;
+    }
 
-    // 简单竞速：先检查哪个有结果
-    // （Qt6.7 Concurrent 限制：不做真正的 async race，改为串行取最快有结果的那个）
-    QElapsedTimer timer;
-    timer.start();
-
-    auto tryGet = [&](QFuture<QuoteData>& f, const QString& src) -> QuoteData {
-        if (timer.elapsed() > timeoutMs) return {};
-        f.waitForFinished();
-        if (timer.elapsed() > timeoutMs) return {};
-        auto q = f.result();
-        if (!q.isValid()) return {};
-        qDebug() << "[Aggregator] Source:" << src << "latency:" << timer.elapsed() << "ms";
-        return q;
-    };
-
-    // 按优先级：Yahoo > 东方财富 > 新浪
-    QuoteData best = tryGet(f1, "Yahoo");
-    if (!best.isValid()) best = tryGet(f2, "EastMoney");
-    if (!best.isValid()) best = tryGet(f3, "Sina");
-
-    if (best.isValid()) {
-        DataHub::instance().publishQuote(best);
-        if (onDone) onDone(best);
+    const quint64 id = createState(normalized, true, timeoutMs);
+    states_[id].onDone = std::move(onDone);
+    startSource(id, "Yahoo", yahooUrl(normalized), &Aggregator::parseYahoo);
+    if (isNumericSymbol(normalized)) {
+        startSource(id, "EastMoney", eastMoneyUrl(normalized), &Aggregator::parseEastMoney);
+        startSource(id, "Sina", sinaUrl(normalized), &Aggregator::parseSina);
     }
 }
 
-// ── 全量拉取 ────────────────────────────────────────
-
 void Aggregator::fetchAll(const QString& symbol,
-                           std::function<void(QuoteData, const QString&)> onEach)
+                          std::function<void(QuoteData, const QString&)> onEach,
+                          int timeoutMs)
 {
-    QElapsedTimer t;
+    const QString normalized = symbol.trimmed().toUpper();
+    if (normalized.isEmpty()) {
+        emit errorOccurred(symbol, "Symbol is empty");
+        return;
+    }
 
-    t.start();
-    auto y = fetchFromYahoo(symbol);
-    if (y.isValid() && onEach) onEach(y, "Yahoo");
-
-    t.restart();
-    auto e = fetchFromEastMoney(symbol);
-    if (e.isValid() && onEach) onEach(e, "EastMoney");
-
-    t.restart();
-    auto s = fetchFromSina(symbol);
-    if (s.isValid() && onEach) onEach(s, "Sina");
+    const quint64 id = createState(normalized, false, timeoutMs);
+    states_[id].onEach = std::move(onEach);
+    startSource(id, "Yahoo", yahooUrl(normalized), &Aggregator::parseYahoo);
+    if (isNumericSymbol(normalized)) {
+        startSource(id, "EastMoney", eastMoneyUrl(normalized), &Aggregator::parseEastMoney);
+        startSource(id, "Sina", sinaUrl(normalized), &Aggregator::parseSina);
+    }
 }
 
-// ── Yahoo ────────────────────────────────────────────
+void Aggregator::startSource(quint64 stateId, const QString& source,
+                             const QString& url, Parser parser)
+{
+    auto stateIt = states_.find(stateId);
+    if (stateIt == states_.end() || stateIt->finished) return;
+    stateIt->pendingSources.insert(source);
 
-QuoteData Aggregator::fetchFromYahoo(const QString& symbol) {
-    QString url = QString("https://query1.finance.yahoo.com/v8/finance/chart/%1"
-                          "?interval=2m&range=1d").arg(symbol);
-    QByteArray json = net::HttpClient::instance().get(url, 3000);
-    if (json.isEmpty()) return {};
+    const auto requestId = net::HttpClient::instance().getAsync(
+        url, this,
+        [this, stateId, source, parser](const net::HttpResponse& response) {
+            handleSourceResponse(stateId, source, parser, response);
+        }, 3000);
 
-    QuoteData q;
-    q.symbol = symbol;
-    QJsonDocument doc = QJsonDocument::fromJson(json);
-    QJsonObject root = doc.object();
-    QJsonObject chart = root["chart"].toObject();
-    QJsonArray result = chart["result"].toArray();
-    if (result.isEmpty()) return q;
+    if (requestId == net::HttpClient::InvalidRequestId) {
+        stateIt->pendingSources.remove(source);
+        stateIt->results.append({source, 0, {}, false});
+        if (stateIt->pendingSources.isEmpty()) finishState(stateId, "Failed to start any source request");
+        return;
+    }
+    stateIt->requests.insert(requestId);
+}
 
-    QJsonObject first = result[0].toObject();
-    QJsonObject meta = first["meta"].toObject();
-    q.price     = meta["regularMarketPrice"].toDouble();
+void Aggregator::handleSourceResponse(quint64 stateId, const QString& source,
+                                      Parser parser, const net::HttpResponse& response)
+{
+    auto stateIt = states_.find(stateId);
+    if (stateIt == states_.end() || stateIt->finished) return;
+    auto& state = stateIt.value();
+    state.pendingSources.remove(source);
+
+    QuoteData quote;
+    if (response.isSuccess() && !response.body.isEmpty()) {
+        quote = parser(response.body, state.symbol);
+    }
+    const bool valid = validateQuote(quote, state.symbol);
+    state.results.append({source, static_cast<int>(state.elapsed.elapsed()), quote, valid});
+
+    if (valid && state.bestOnly) {
+        DataHub::instance().publishQuote(quote);
+        if (state.onDone) state.onDone(quote);
+        emit resultReady(quote, state.results);
+        finishState(stateId);
+        return;
+    }
+    if (valid && state.onEach) state.onEach(quote, source);
+    if (state.pendingSources.isEmpty()) {
+        const bool hasValidResult = std::any_of(
+            state.results.cbegin(), state.results.cend(),
+            [](const SourceResult& result) { return result.valid; });
+        if (hasValidResult) finishState(stateId);
+        else finishState(stateId, "All data sources returned invalid data");
+    }
+}
+
+void Aggregator::finishState(quint64 stateId, const QString& error)
+{
+    auto it = states_.find(stateId);
+    if (it == states_.end() || it->finished) return;
+    it->finished = true;
+    if (it->timeoutTimer) {
+        it->timeoutTimer->stop();
+        it->timeoutTimer->deleteLater();
+    }
+    for (const auto requestId : it->requests) {
+        net::HttpClient::instance().cancel(requestId);
+    }
+    const QString symbol = it->symbol;
+    const bool failed = !error.isEmpty();
+    states_.erase(it);
+    if (failed) emit errorOccurred(symbol, error);
+}
+
+bool Aggregator::validateQuote(const QuoteData& quote, const QString& symbol) const
+{
+    return quote.isValid() && quote.symbol.compare(symbol, Qt::CaseInsensitive) == 0
+        && qIsFinite(quote.price) && quote.price > 0.0
+        && quote.timestamp > 0;
+}
+
+bool Aggregator::isNumericSymbol(const QString& symbol)
+{
+    static const QRegularExpression re(QStringLiteral("^[0-9]{6}$"));
+    return re.match(symbol).hasMatch();
+}
+
+QString Aggregator::yahooUrl(const QString& symbol)
+{
+    return QStringLiteral("https://query1.finance.yahoo.com/v8/finance/chart/%1?interval=2m&range=1d").arg(symbol);
+}
+
+QString Aggregator::eastMoneyUrl(const QString& symbol)
+{
+    const QString secid = symbol.startsWith('6') ? "1." + symbol : "0." + symbol;
+    return QStringLiteral("http://push2.eastmoney.com/api/qt/stock/get?secid=%1&fields=f43,f44,f45,f46,f47,f57,f58,f169,f170").arg(secid);
+}
+
+QString Aggregator::sinaUrl(const QString& symbol)
+{
+    const QString code = symbol.startsWith('6') ? "sh" + symbol : "sz" + symbol;
+    return QStringLiteral("http://hq.sinajs.cn/list=%1").arg(code);
+}
+
+QuoteData Aggregator::parseYahoo(const QByteArray& json, const QString& symbol)
+{
+    QuoteData q; q.symbol = symbol;
+    const auto root = QJsonDocument::fromJson(json).object();
+    const auto results = root["chart"].toObject()["result"].toArray();
+    if (results.isEmpty()) return q;
+    const auto meta = results.first().toObject()["meta"].toObject();
+    q.price = meta["regularMarketPrice"].toDouble();
     q.prevClose = meta["previousClose"].toDouble();
-    q.open      = meta["regularMarketOpen"].toDouble();
-    q.high      = meta["regularMarketDayHigh"].toDouble();
-    q.low       = meta["regularMarketDayLow"].toDouble();
-    q.currency  = meta["currency"].toString();
-    q.exchange  = meta["exchangeName"].toString();
-    q.change        = q.price - q.prevClose;
-    q.changePercent = q.prevClose > 0 ? (q.change / q.prevClose) * 100.0 : 0.0;
-
+    q.open = meta["regularMarketOpen"].toDouble();
+    q.high = meta["regularMarketDayHigh"].toDouble();
+    q.low = meta["regularMarketDayLow"].toDouble();
+    q.currency = meta["currency"].toString();
+    q.exchange = meta["exchangeName"].toString();
+    q.change = q.price - q.prevClose;
+    q.changePercent = q.prevClose > 0 ? q.change / q.prevClose * 100.0 : 0.0;
+    q.timestamp = QDateTime::currentMSecsSinceEpoch();
     return q;
 }
 
-QuoteData Aggregator::fetchFromEastMoney(const QString& symbol) {
-    // A股用东方财富，非数字代码跳过
-    bool ok;
-    symbol.toLongLong(&ok);
-    if (!ok) return {};
-
-    QString secid = symbol.startsWith('6') ? "1." + symbol : "0." + symbol;
-    QString url = "http://push2.eastmoney.com/api/qt/stock/get"
-                  "?secid=" + secid +
-                  "&fields=f43,f44,f45,f46,f47,f57,f58,f169,f170";
-
-    QByteArray json = net::HttpClient::instance().get(url, 3000);
-    if (json.isEmpty()) return {};
-
-    QJsonDocument doc = QJsonDocument::fromJson(json);
-    QJsonObject data = doc.object()["data"].toObject();
-    if (data.isEmpty()) return {};
-
-    QuoteData q;
-    q.symbol    = symbol;
-    q.price     = data["f43"].toDouble() / 100.0;
-    q.high      = data["f44"].toDouble() / 100.0;
-    q.low       = data["f45"].toDouble() / 100.0;
-    q.open      = data["f46"].toDouble() / 100.0;
-    q.name      = data["f57"].toString();
-    q.change    = data["f58"].toDouble() / 100.0;
+QuoteData Aggregator::parseEastMoney(const QByteArray& json, const QString& symbol)
+{
+    QuoteData q; q.symbol = symbol;
+    const auto data = QJsonDocument::fromJson(json).object()["data"].toObject();
+    if (data.isEmpty()) return q;
+    q.price = data["f43"].toDouble() / 100.0;
+    q.high = data["f44"].toDouble() / 100.0;
+    q.low = data["f45"].toDouble() / 100.0;
+    q.open = data["f46"].toDouble() / 100.0;
+    q.volume = static_cast<qint64>(data["f47"].toDouble());
+    q.name = data["f57"].toString();
+    q.change = data["f58"].toDouble() / 100.0;
     q.changePercent = data["f169"].toDouble() / 100.0;
     q.prevClose = data["f170"].toDouble() / 100.0;
-    q.currency  = "CNY";
-    q.exchange  = symbol.startsWith('6') ? "SSE" : "SZSE";
-
+    q.currency = "CNY"; q.exchange = symbol.startsWith('6') ? "SSE" : "SZSE";
+    q.timestamp = QDateTime::currentMSecsSinceEpoch();
     return q;
 }
 
-QuoteData Aggregator::fetchFromSina(const QString& symbol) {
-    // 新浪财经接口（A股免费）
-    bool ok;
-    symbol.toLongLong(&ok);
-    if (!ok) return {};
-
-    QString code = symbol.startsWith('6') ? "sh" + symbol : "sz" + symbol;
-    QString url = "http://hq.sinajs.cn/list=" + code;
-    QByteArray bytes = net::HttpClient::instance().get(url, 3000);
-    if (bytes.isEmpty()) return {};
-
-    // 新浪返回格式: var hq_str_sh600519="茅台,1500.00,1490.00,..."
-    QString resp = QString::fromLocal8Bit(bytes);
-    int eq = resp.indexOf('"');
-    int end = resp.indexOf('"', eq + 1);
-    if (eq < 0 || end < 0) return {};
-
-    QString data = resp.mid(eq + 1, end - eq - 1);
-    QStringList parts = data.split(',');
-
-    QuoteData q;
-    q.symbol = symbol;
-    q.name   = parts.value(0);
-    q.open   = parts.value(1).toDouble();
-    q.prevClose = parts.value(2).toDouble();
-    q.price  = parts.value(3).toDouble();
-    q.high   = parts.value(4).toDouble();
-    q.low    = parts.value(5).toDouble();
-    q.change = q.price - q.prevClose;
-    q.changePercent = q.prevClose > 0 ? (q.change / q.prevClose) * 100.0 : 0.0;
-    q.currency = "CNY";
-    q.exchange = symbol.startsWith('6') ? "SSE" : "SZSE";
-
+QuoteData Aggregator::parseSina(const QByteArray& bytes, const QString& symbol)
+{
+    QuoteData q; q.symbol = symbol;
+    const QString response = QString::fromLocal8Bit(bytes);
+    const int begin = response.indexOf('\"');
+    const int end = response.indexOf('\"', begin + 1);
+    if (begin < 0 || end < 0) return q;
+    const auto parts = response.mid(begin + 1, end - begin - 1).split(',');
+    if (parts.size() < 6) return q;
+    q.name = parts.value(0); q.open = parts.value(1).toDouble(); q.prevClose = parts.value(2).toDouble();
+    q.price = parts.value(3).toDouble(); q.high = parts.value(4).toDouble(); q.low = parts.value(5).toDouble();
+    q.change = q.price - q.prevClose; q.changePercent = q.prevClose > 0 ? q.change / q.prevClose * 100.0 : 0.0;
+    q.currency = "CNY"; q.exchange = symbol.startsWith('6') ? "SSE" : "SZSE";
+    q.timestamp = QDateTime::currentMSecsSinceEpoch();
     return q;
 }
 

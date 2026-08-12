@@ -3,7 +3,6 @@
 #include "storage/Database.h"
 #include "datahub/QuoteData.h"
 #include "datahub/DataHub.h"
-#include "datahub/YahooProducer.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -26,19 +25,6 @@ int main(int argc, char *argv[])
     } else {
         qWarning() << "Failed to open database:" << dbPath;
     }
-
-    // —— 测试数据源（启动时拉一次 AAPL，验证数据通路） ——
-    auto* yahoo = new fininsight::datahub::YahooProducer(&app);
-    QObject::connect(yahoo, &fininsight::datahub::YahooProducer::quoteReady,
-        [](const fininsight::datahub::QuoteData& q) {
-            qInfo() << "[Main] Quote received:" << q.symbol
-                    << q.price << q.changePercent << "%";
-        });
-    QObject::connect(yahoo, &fininsight::datahub::YahooProducer::errorOccurred,
-        [](const QString& symbol, const QString& msg) {
-            qWarning() << "[Main] Yahoo error:" << symbol << msg;
-        });
-    yahoo->fetchOrCache("AAPL");
 
     // —— 启动 UI ——
     MainWindow window;

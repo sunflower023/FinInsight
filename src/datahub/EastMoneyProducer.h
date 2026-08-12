@@ -26,6 +26,8 @@ public:
     /// @param symbol 纯数字代码，如 "600519"
     void fetchQuote(const QString& symbol);
 
+    bool isRequesting() const { return pendingCount_ > 0; }
+
 signals:
     void quoteReady(const QuoteData& quote);
     void errorOccurred(const QString& symbol, const QString& message);
@@ -35,6 +37,8 @@ private:
     static QString buildSecId(const QString& symbol);
     static QString buildUrl(const QString& secid);
     QuoteData parseResponse(const QByteArray& json, const QString& symbol);
+
+    int pendingCount_ = 0;
 };
 
 } // namespace fininsight::datahub

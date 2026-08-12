@@ -89,13 +89,13 @@ DataHub 会保存每个主题最后一条数据；新订阅默认回放缓存。
 | `src/datahub/DataHub.h`、`src/datahub/DataHub.cpp` | 单例发布/订阅、主题通配、最后值回放、线程锁 | 已接入 |
 | `src/datahub/YahooProducer.h`、`src/datahub/YahooProducer.cpp` | Yahoo quote/chart JSON 请求、解析、缓存优先策略，并发布标准数据 | 主流程使用 |
 | `src/datahub/EastMoneyProducer.h`、`src/datahub/EastMoneyProducer.cpp` | EastMoney 响应适配器，输出统一报价/K线信号 | 独立原型 |
-| `src/datahub/Aggregator.h`、`src/datahub/Aggregator.cpp` | 并发启动多个 Producer，收集首个有效结果的聚合器原型 | 未接入主流程；线程归属需注意 |
+| `src/datahub/Aggregator.h`、`src/datahub/Aggregator.cpp` | 基于异步 HttpClient 并发请求 Yahoo/EastMoney/Sina，校验首个有效报价并取消其余请求 | 异步原型；尚未接入主流程 |
 
 ### 5.3 网络与持久化
 
 | 文件 | 实现与职责 | 当前状态 |
 |---|---|---|
-| `src/network/HttpClient.h`、`src/network/HttpClient.cpp` | 基于 `QNetworkAccessManager` 的同步封装，支持超时、状态码和错误字符串 | 已使用；同步事件循环是已知风险 |
+| `src/network/HttpClient.h`、`src/network/HttpClient.cpp` | 基于 `QNetworkAccessManager` 的 HTTP 封装；异步请求提供响应、超时、取消和 context 线程回调 | Yahoo 主链路已异步；旧同步接口仅供原型模块使用 |
 | `src/storage/Database.h`、`src/storage/Database.cpp` | SQLite 单例连接、WAL/PRAGMA、事务、按线程克隆连接、迁移执行 | 已接入 |
 | `src/storage/Migration.h` | 迁移版本号、描述和升级函数的数据结构 | 已接入 |
 | `src/storage/migrations/V001_Initial.h` | 创建 stocks、klines、watchlist 等初始表 | 已接入 |

@@ -29,9 +29,9 @@ FinInsight 正从桌面行情分析原型演进为“模拟投资实验室”：
 | DataHub 订阅/回放 | 已实现 | 支持主题匹配和最后值回放 |
 | SQLite 基础缓存 | 已实现 | 当前迁移为 V001 |
 | K线与部分技术指标 | 部分实现 | `KLineChart` 已显示 MA/BOLL，算法模块更完整 |
-| EastMoney/Sina 多源 | 原型 | 适配器/聚合器尚未成为生产主链路 |
-| Aggregator first-valid | 未达到生产级 | 线程归属、取消、超时和数据质量校验待解决 |
-| HTTP 异步请求 | 未实现 | 当前同步等待可能阻塞 UI |
+| EastMoney/Sina 多源 | 异步适配器/原型 | EastMoney 已使用异步 HTTP；尚未接入主窗口 |
+| Aggregator first-valid | 异步原型已完成 | 已支持并发请求、领域校验、总超时和取消；尚未编译/运行验证 |
+| HTTP 异步请求 | 主链路已接入 | Yahoo、EastMoney 和 Aggregator 已使用异步接口；旧同步接口仅作为兼容实现保留 |
 | WebSocket 实时行情 | 未实现 | 需先确认可用数据源和协议 |
 | Portfolio 模拟交易 | UI 原型 | 买卖、持仓、报价联动和持久化未完成 |
 | DSL 策略回测 | 未接入 | Lexer/Parser/Evaluator 独立存在 |
@@ -41,9 +41,9 @@ FinInsight 正从桌面行情分析原型演进为“模拟投资实验室”：
 
 ### P0：稳定基础设施
 
-1. 将 `HttpClient` 从同步嵌套事件循环改为明确的异步请求对象。
-2. 统一错误、超时、取消和重试语义，并确保结果通过 queued signal/slot 回到 UI 线程。
-3. 为网络和 DataHub 增加离线 fixture、错误路径和生命周期测试。
+1. 为异步 HTTP 和 Aggregator 补充重试策略、离线 fixture、错误路径和生命周期测试。
+2. 将 Aggregator 接入 MainWindow/DataHub 主链路，并移除不再使用的同步 HTTP 调用。
+3. 明确缓存降级和多源数据质量评分规则。
 
 ### P1：建立业务闭环
 
@@ -77,12 +77,11 @@ FinInsight 正从桌面行情分析原型演进为“模拟投资实验室”：
 
 ## 6. 已知风险与限制
 
-1. `HttpClient::get()` 的同步等待可能阻塞主线程。
-2. `Aggregator` 在线程池中使用 QObject 网络对象存在线程归属风险。
+1. 同步 `HttpClient::get()` 暂时保留兼容接口，尚未从工程中移除。
+2. Aggregator 尚未接入 MainWindow 主链路，也未完成缓存降级策略。
 3. DataHub 的 Topic 是字符串约定，拼写错误无法在编译期发现。
-4. 启动时 `main.cpp` 和 `MainWindow` 都可能触发 AAPL 请求，存在重复请求。
-5. 指标算法、Parser、JSON 解析和模拟交易尚缺少完整自动化测试。
-6. `CMakePresets.json` 含有本机 Qt 路径，跨机器构建前需调整。
+4. 指标算法、Parser、JSON 解析、异步网络和模拟交易尚缺少完整自动化测试。
+5. `CMakePresets.json` 含有本机 Qt 路径，跨机器构建前需调整。
 
 ## 7. 开发后知识沉淀格式
 
@@ -108,6 +107,22 @@ FinInsight 正从桌面行情分析原型演进为“模拟投资实验室”：
 - 验证方式：基于当前源码、项目架构文档和路线图核对模块状态；未执行构建（本机 Qt 环境尚未安装）。
 - 未解决问题：异步 HTTP、模拟账本、Aggregator 和 WebSocket 均尚未实现。
 - 下一步：优先设计并测试异步 HTTP 请求接口，随后建立模拟投资账本的数据模型。
+
+### 2026-08-07：Yahoo 主链路异步化
+
+- 修改文件：`src/network/HttpClient.h`、`src/network/HttpClient.cpp`、`src/datahub/YahooProducer.cpp`、`src/app/MainWindow.h`、`src/app/MainWindow.cpp`、`src/main.cpp`。
+- 实现内容：新增 `HttpResponse`、请求 ID、超时、取消和 HTTP 状态码语义；请求回调通过 queued invocation 返回 context 所在线程。Yahoo 报价与 K 线不再调用同步 `get()`；MainWindow 持有长期存活的 YahooProducer，移除启动时重复 AAPL 请求。
+- 验证方式：静态搜索确认 Yahoo 主链路只调用 `getAsync()`；`git diff --check` 通过。`cmake --preset win-dev` 未能配置，因为当前环境缺少 Ninja 和 C++ 编译器，尚未进入 Qt 编译阶段。
+- 未解决问题：同步接口仍被 EastMoneyProducer/Aggregator 使用；没有 Qt 环境，尚未执行自动化测试或实际网络验证。
+- 下一步：安装完整 Qt/MSVC/Ninja 工具链后，先为 HttpResponse、超时、取消和 context 销毁补 CTest；再迁移 EastMoneyProducer 和重构 Aggregator。
+
+### 2026-08-12：EastMoney 与 Aggregator 异步化
+
+- 修改文件：`src/datahub/EastMoneyProducer.cpp`、`src/datahub/Aggregator.h`、`src/datahub/Aggregator.cpp`。
+- 实现内容：EastMoney 使用 `HttpClient::getAsync()`；Aggregator 改为异步状态机，同时请求 Yahoo/EastMoney/Sina，校验 symbol、价格、时间戳和 `QuoteData::isValid()`，首个有效结果发布后取消其余请求；总超时、全部失败和迟到回调只结束一次。
+- 验证方式：静态检查确认 `src/datahub` 不再调用同步 `HttpClient::get()`，且已移除 Aggregator 的 `QtConcurrent::run`/`waitForFinished()`；`git diff --check` 通过。当前无 Qt/MSVC/Ninja，未完成编译和运行验证。
+- 未解决问题：Aggregator 尚未接入 MainWindow；HTTP 重试和缓存降级未实现；同步 `get()` 仍作为兼容接口保留。
+- 下一步：安装工具链后补网络/聚合测试，再将 MainWindow 的行情请求切换到 Aggregator。
 
 ## 9. 下一会话入口
 

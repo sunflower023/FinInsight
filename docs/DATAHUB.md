@@ -74,10 +74,10 @@ sequenceDiagram
     Note over Hub: 新订阅者，暂无缓存数据
 
     UI->>YP: fetchQuote("AAPL")
-    YP->>HTTP: get("https://query1.finance.yahoo.com/...")
+    YP->>HTTP: getAsync(url, context, callback)
     HTTP->>API: HTTP GET
     API-->>HTTP: JSON (price=187.5, change=+1.2%...)
-    HTTP-->>YP: QByteArray
+    HTTP-->>YP: HttpResponse（queued callback）
 
     YP->>YP: parseQuote(json) → QuoteData
     YP->>DB: StockRepository.insert/update
@@ -97,17 +97,20 @@ sequenceDiagram
 ### 4.1 HttpClient — HTTP 客户端
 
 ```
-职责：封装 QNetworkAccessManager，提供同步/异步请求
+职责：封装 QNetworkAccessManager，提供统一响应、取消和超时语义的请求
 依赖：Qt6::Network
 
 方法：
-  get(url, timeout)        → 同步 GET，阻塞返回 QByteArray
+  get(url, timeout)        → 旧同步 GET，阻塞返回 QByteArray（仅原型模块仍在使用）
   post(url, body, timeout) → 同步 POST
-  getAsync(url, onDone)    → 异步 GET，回调接收结果
+  getAsync(url, context, handler) → 异步 GET，返回 RequestId
+  cancel(requestId)        → 取消仍在进行的异步请求
 
 实现要点：
   - 同步请求：QEventLoop + QTimer 超时控制
-  - 异步请求：connect finished 信号 → handleReply
+  - HttpResponse 含 body、HTTP 状态码、网络错误、超时和取消状态
+  - 异步请求只完成一次；超时/取消通过 finished 链路返回
+  - 回调用 QueuedConnection 投递到 context 所在线程
   - User-Agent 伪装浏览器
 ```
 
@@ -141,7 +144,7 @@ sequenceDiagram
 依赖：HttpClient, QuoteData, DataHub, StockRepository
 
 方法：
-  fetchQuote(symbol)      → 拉实时报价，发布到 DataHub + 写入 SQLite
+  fetchQuote(symbol)      → 异步拉实时报价，发布到 DataHub + 写入 SQLite
   fetchKLine(symbol, 6mo) → 拉半年日 K 线，发布到 DataHub
   fetchOrCache(symbol)    → 先查 SQLite，有缓存先发布缓存，再异步拉最新
 
