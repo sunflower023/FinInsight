@@ -36,6 +36,7 @@ public:
 
     struct SourceResult {
         QString source;
+        QString error;
         int latencyMs = 0;
         QuoteData data;
         bool valid = false;
@@ -69,14 +70,6 @@ private:
                               Parser parser, const network::HttpResponse& response);
     void finishState(quint64 stateId, const QString& error = {});
     bool validateQuote(const QuoteData& quote, const QString& symbol) const;
-
-    static bool isNumericSymbol(const QString& symbol);
-    static QString eastMoneyUrl(const QString& symbol);
-    static QString sinaUrl(const QString& symbol);
-    static QString yahooUrl(const QString& symbol);
-    static QuoteData parseYahoo(const QByteArray& json, const QString& symbol);
-    static QuoteData parseEastMoney(const QByteArray& json, const QString& symbol);
-    static QuoteData parseSina(const QByteArray& bytes, const QString& symbol);
 
     QHash<quint64, AggregateState> states_;
     quint64 nextStateId_ = 1;

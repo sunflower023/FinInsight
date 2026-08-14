@@ -85,17 +85,19 @@ DataHub 会保存每个主题最后一条数据；新订阅默认回放缓存。
 
 | 文件 | 实现与职责 | 当前状态 |
 |---|---|---|
-| `src/datahub/QuoteData.h` | `QuoteData`/`KLineData` 传输结构 | 已接入 |
+| `src/datahub/QuoteData.h` | `QuoteData`/`KLineData` 传输结构；日线可保存可选复权收盘价 | 已接入 |
+| `src/datahub/HistoricalPriceAdapter.h`、`src/datahub/HistoricalPriceAdapter.cpp` | 将 Qt K 线桥接到严格校验的实验价格序列 | 已实现；尚未接入 UI |
 | `src/datahub/DataHub.h`、`src/datahub/DataHub.cpp` | 单例发布/订阅、主题通配、最后值回放、线程锁 | 已接入 |
 | `src/datahub/YahooProducer.h`、`src/datahub/YahooProducer.cpp` | Yahoo quote/chart JSON 请求、解析、缓存优先策略，并发布标准数据 | 主流程使用 |
-| `src/datahub/EastMoneyProducer.h`、`src/datahub/EastMoneyProducer.cpp` | EastMoney 响应适配器，输出统一报价/K线信号 | 独立原型 |
+| `src/datahub/QuoteAdapters.h`、`src/datahub/QuoteAdapters.cpp` | Yahoo/EastMoney/Sina URL 构建与报价 JSON 适配 | 共享适配器 |
+| `src/datahub/EastMoneyProducer.h`、`src/datahub/EastMoneyProducer.cpp` | EastMoney 异步报价适配器，输出统一报价信号 | 独立原型；已迁移异步 HTTP |
 | `src/datahub/Aggregator.h`、`src/datahub/Aggregator.cpp` | 基于异步 HttpClient 并发请求 Yahoo/EastMoney/Sina，校验首个有效报价并取消其余请求 | 异步原型；尚未接入主流程 |
 
 ### 5.3 网络与持久化
 
 | 文件 | 实现与职责 | 当前状态 |
 |---|---|---|
-| `src/network/HttpClient.h`、`src/network/HttpClient.cpp` | 基于 `QNetworkAccessManager` 的 HTTP 封装；异步请求提供响应、超时、取消和 context 线程回调 | Yahoo 主链路已异步；旧同步接口仅供原型模块使用 |
+| `src/network/HttpClient.h`、`src/network/HttpClient.cpp` | 基于 `QNetworkAccessManager` 的 HTTP 封装；异步请求提供响应、超时、取消和 context 线程回调 | Producer/Aggregator 已异步；旧同步接口仅供兼容 |
 | `src/storage/Database.h`、`src/storage/Database.cpp` | SQLite 单例连接、WAL/PRAGMA、事务、按线程克隆连接、迁移执行 | 已接入 |
 | `src/storage/Migration.h` | 迁移版本号、描述和升级函数的数据结构 | 已接入 |
 | `src/storage/migrations/V001_Initial.h` | 创建 stocks、klines、watchlist 等初始表 | 已接入 |
@@ -137,9 +139,18 @@ flowchart LR
 | `src/panels/DetailPanel.h`、`src/panels/DetailPanel.cpp` | 8 行行情字段表格，响应 `QuoteData` | 已接入 |
 | `src/panels/PortfolioPanel.h`、`src/panels/PortfolioPanel.cpp` | 10 万美元初始现金、买卖控件、交易历史表和持仓结构 | UI 原型；买卖逻辑和报价联动未完成 |
 
+### 5.7 市场规则与模拟账本
+
+| 文件 | 实现与职责 | 当前状态 |
+|---|---|---|
+| market/QuoteRules.h/.cpp | 纯 C++ 标的规范化、数据源路由、报价校验和错误汇总 | 已实现；独立测试覆盖 |
+| simulation/Ledger.h/.cpp | 纯 C++ 虚拟现金、成交、持仓成本、手续费和盈亏计算 | 核心初版；尚未接入 UI/SQLite |
+| simulation/InvestmentExperiment.h/.cpp | 纯 C++ 单标的历史买入持有实验，计算实际成交/估值边界、收益和最大回撤 | 核心已实现；尚未接入历史行情/UI |
+| simulation/HistoricalPriceSeries.h/.cpp | 校验标的、ISO 交易日、顺序和收盘价/复权价口径，生成实验 `PricePoint` | 核心已实现；独立测试覆盖 |
+
 ## 6. 当前组合模拟的真实边界
 
-`PortfolioPanel` 目前只定义了 `Trade`、`Position`、现金和表格；`onBuyClicked()`/`onSellClicked()` 尚未执行成交，`onQuoteUpdated()` 也尚未更新浮动盈亏。因此“模拟投资实验室”需要新增独立账本/成交/回测领域模块，再由面板调用，而不是继续把金融计算堆进 QWidget。
+`PortfolioPanel` 目前只定义了 `Trade`、`Position`、现金和表格；`onBuyClicked()`/`onSellClicked()` 尚未执行成交，`onQuoteUpdated()` 也尚未更新浮动盈亏。独立账本和单标的历史买入持有实验已具备，但尚未连接历史 K 线、QWidget 或 SQLite。后续由面板调用领域模块，不在 QWidget 中重复金融计算。
 
 建议未来链路：
 

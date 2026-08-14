@@ -1,11 +1,9 @@
 #include "datahub/YahooProducer.h"
+#include "datahub/QuoteAdapters.h"
 #include "datahub/DataHub.h"
 #include "network/HttpClient.h"
 #include "storage/StockRepository.h"
 
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QDebug>
 #include <QDateTime>
 
@@ -21,9 +19,7 @@ YahooProducer::YahooProducer(QObject* parent)
 // ── URL 构建 ────────────────────────────────────────
 
 QString YahooProducer::buildQuoteUrl(const QString& symbol) {
-    return QString("https://query1.finance.yahoo.com/v8/finance/chart/%1"
-                   "?interval=2m&range=1d&includePrePost=false")
-        .arg(symbol);
+    return quote_adapters::yahooUrl(symbol);
 }
 
 QString YahooProducer::buildKLineUrl(const QString& symbol,
@@ -146,31 +142,7 @@ void YahooProducer::fetchOrCache(const QString& symbol) {
 
 QuoteData YahooProducer::parseQuote(const QByteArray& json,
                                      const QString& symbol) {
-    QuoteData q;
-    q.symbol = symbol;
-
-    QJsonDocument doc = QJsonDocument::fromJson(json);
-    QJsonObject root = doc.object();
-    QJsonObject chart = root["chart"].toObject();
-    QJsonArray result = chart["result"].toArray();
-    if (result.isEmpty()) return q;
-
-    QJsonObject first = result[0].toObject();
-    QJsonObject meta  = first["meta"].toObject();
-    q.currency  = meta["currency"].toString();
-    q.exchange  = meta["exchangeName"].toString();
-    q.price     = meta["regularMarketPrice"].toDouble();
-    q.prevClose = meta["previousClose"].toDouble();
-    q.open      = meta["regularMarketOpen"].toDouble();
-    q.high      = meta["regularMarketDayHigh"].toDouble();
-    q.low       = meta["regularMarketDayLow"].toDouble();
-    q.volume    = static_cast<qint64>(meta["regularMarketVolume"].toDouble());
-
-    q.change        = q.price - q.prevClose;
-    q.changePercent = q.prevClose > 0 ? (q.change / q.prevClose) * 100.0 : 0.0;
-    q.timestamp     = QDateTime::currentMSecsSinceEpoch();
-
-    return q;
+    return quote_adapters::parseYahoo(json, symbol);
 }
 
 QVector<KLineData> YahooProducer::parseKLine(const QByteArray& json,
@@ -195,17 +167,26 @@ QVector<KLineData> YahooProducer::parseKLine(const QByteArray& json,
     QJsonArray lows   = quote["low"].toArray();
     QJsonArray closes = quote["close"].toArray();
     QJsonArray volumes = quote["volume"].toArray();
+    QJsonArray adjustedCloses;
+    const QJsonArray adjustedSeries = indicators["adjclose"].toArray();
+    if (!adjustedSeries.isEmpty()) {
+        adjustedCloses = adjustedSeries[0].toObject()["adjclose"].toArray();
+    }
 
     for (int i = 0; i < timestamps.size(); ++i) {
         KLineData bar;
         bar.symbol = symbol;
         bar.date   = QDateTime::fromSecsSinceEpoch(
-            static_cast<qint64>(timestamps[i].toDouble()))
+            static_cast<qint64>(timestamps[i].toDouble()), Qt::UTC)
             .toString("yyyy-MM-dd");
         bar.open   = opens[i].toDouble();
         bar.high   = highs[i].toDouble();
         bar.low    = lows[i].toDouble();
         bar.close  = closes[i].toDouble();
+        if (i < adjustedCloses.size() && adjustedCloses[i].isDouble()) {
+            bar.adjustedClose = adjustedCloses[i].toDouble();
+            bar.hasAdjustedClose = true;
+        }
         bar.volume = static_cast<qint64>(volumes[i].toDouble());
 
         // 跳过空数据

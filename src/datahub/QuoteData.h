@@ -36,6 +36,8 @@ struct KLineData {
     double  high   = 0.0;
     double  low    = 0.0;
     double  close  = 0.0;
+    double  adjustedClose = 0.0;
+    bool    hasAdjustedClose = false;
     qint64  volume = 0;
 };
 

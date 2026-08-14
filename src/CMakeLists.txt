@@ -4,6 +4,14 @@ set(SOURCES
     app/MainWindow.cpp
     core/AppConfig.h
     core/AppConfig.cpp
+    market/QuoteRules.h
+    market/QuoteRules.cpp
+    simulation/Ledger.h
+    simulation/Ledger.cpp
+    simulation/InvestmentExperiment.h
+    simulation/InvestmentExperiment.cpp
+    simulation/HistoricalPriceSeries.h
+    simulation/HistoricalPriceSeries.cpp
     storage/Migration.h
     storage/Database.h
     storage/Database.cpp
@@ -14,6 +22,10 @@ set(SOURCES
     network/HttpClient.h
     network/HttpClient.cpp
     datahub/QuoteData.h
+    datahub/QuoteAdapters.h
+    datahub/QuoteAdapters.cpp
+    datahub/HistoricalPriceAdapter.h
+    datahub/HistoricalPriceAdapter.cpp
     datahub/DataHub.h
     datahub/DataHub.cpp
     datahub/YahooProducer.h

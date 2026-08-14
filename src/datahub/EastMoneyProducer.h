@@ -33,9 +33,6 @@ signals:
     void errorOccurred(const QString& symbol, const QString& message);
 
 private:
-    /// 自动判断沪市(1)还是深市(0)
-    static QString buildSecId(const QString& symbol);
-    static QString buildUrl(const QString& secid);
     QuoteData parseResponse(const QByteArray& json, const QString& symbol);
 
     int pendingCount_ = 0;

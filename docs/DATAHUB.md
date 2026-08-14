@@ -13,6 +13,7 @@ src/
 │
 ├── datahub/
 │   ├── QuoteData.h              ← 行情数据结构体
+│   ├── HistoricalPriceAdapter.h/.cpp ← K 线到实验价格序列的 Qt 桥接
 │   ├── DataHub.h / .cpp         ← 发布订阅中枢（单例）
 │   ├── YahooProducer.h / .cpp   ← Yahoo 美股数据源
 │   └── EastMoneyProducer.h/cpp  ← 东方财富 A 股数据源
@@ -101,7 +102,7 @@ sequenceDiagram
 依赖：Qt6::Network
 
 方法：
-  get(url, timeout)        → 旧同步 GET，阻塞返回 QByteArray（仅原型模块仍在使用）
+  get(url, timeout)        → 旧同步 GET，阻塞返回 QByteArray（仅兼容接口，待移除）
   post(url, body, timeout) → 同步 POST
   getAsync(url, context, handler) → 异步 GET，返回 RequestId
   cancel(requestId)        → 取消仍在进行的异步请求
@@ -160,7 +161,7 @@ API URL：
 依赖：HttpClient, QuoteData, DataHub
 
 方法：
-  fetchQuote(symbol)  → 拉单只 A 股行情，发布到 DataHub
+  fetchQuote(symbol)  → 异步拉单只 A 股行情，发布到 DataHub
 
 secid 规则：
   沪市 600519 → 1.600519
@@ -196,9 +197,16 @@ struct KLineData {
     QString symbol;
     QString date;          // "2026-07-12"
     double  open, high, low, close;
+    double  adjustedClose; // 数据源提供的复权收盘价
+    bool    hasAdjustedClose;
     qint64  volume;
 };
 ```
+
+Yahoo 日线日期按 UTC 转为 `YYYY-MM-DD`，并在响应包含 `adjclose` 时保留复权
+收盘价。`HistoricalPriceAdapter` 可以显式选择普通收盘价或复权收盘价，转换为
+模拟实验使用的严格递增 `PricePoint` 序列；乱序、重复日期、标的不一致或所选
+价格缺失都会返回明确错误。
 
 ---
 

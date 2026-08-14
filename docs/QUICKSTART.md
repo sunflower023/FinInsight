@@ -75,8 +75,8 @@ cmake --build --preset win-dev
 
 ## 6. 当前已知边界
 
-- Yahoo 主链路已使用可取消的异步请求；EastMoneyProducer 和 Aggregator 原型仍使用同步接口，迁移后才能移除该遗留实现。
-- `Aggregator` 已有并发任务原型，但尚未成为主流程，不能视为生产级竞速器。
+- Yahoo 和 EastMoney Producer 已使用可取消的异步请求；Aggregator 已使用异步状态机，旧同步接口暂作为兼容实现保留。
+- `Aggregator` 已有异步竞速原型，并按标的路由数据源；尚未接入主流程，不能视为生产级竞速器。
 - 组合交易面板目前是 UI 原型，买卖和持仓持久化尚未完成。
 - DSL 尚未接入策略回测流程。
 - 指标和解析器应优先通过单元测试覆盖后再扩展。
