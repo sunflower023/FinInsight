@@ -24,7 +24,14 @@ class Aggregator : public QObject {
     Q_OBJECT
 
 public:
+    using RequestStarter = std::function<network::HttpClient::RequestId(
+        const QString&, QObject*, network::HttpClient::ResponseHandler, int)>;
+    using RequestCanceller = std::function<bool(network::HttpClient::RequestId)>;
+
     explicit Aggregator(QObject* parent = nullptr);
+    Aggregator(RequestStarter requestStarter,
+               RequestCanceller requestCanceller,
+               QObject* parent = nullptr);
 
     void fetchBest(const QString& symbol,
                    std::function<void(QuoteData)> onDone,
@@ -73,6 +80,8 @@ private:
 
     QHash<quint64, AggregateState> states_;
     quint64 nextStateId_ = 1;
+    RequestStarter requestStarter_;
+    RequestCanceller requestCanceller_;
 };
 
 } // namespace fininsight::datahub

@@ -13,7 +13,24 @@ namespace net = fininsight::network;
 namespace adapters = fininsight::datahub::quote_adapters;
 
 Aggregator::Aggregator(QObject* parent)
+    : Aggregator(
+        [](const QString& url, QObject* context,
+           net::HttpClient::ResponseHandler handler, int timeoutMs) {
+            return net::HttpClient::instance().getAsync(
+                url, context, std::move(handler), timeoutMs);
+        },
+        [](net::HttpClient::RequestId requestId) {
+            return net::HttpClient::instance().cancel(requestId);
+        },
+        parent)
+{}
+
+Aggregator::Aggregator(RequestStarter requestStarter,
+                       RequestCanceller requestCanceller,
+                       QObject* parent)
     : QObject(parent)
+    , requestStarter_(std::move(requestStarter))
+    , requestCanceller_(std::move(requestCanceller))
 {}
 
 quint64 Aggregator::createState(const QString& symbol, bool bestOnly, int timeoutMs)
@@ -93,7 +110,7 @@ void Aggregator::startSource(quint64 stateId, const QString& source,
     if (stateIt == states_.end() || stateIt->finished) return;
     stateIt->pendingSources.insert(source);
 
-    const auto requestId = net::HttpClient::instance().getAsync(
+    const auto requestId = requestStarter_(
         url, this,
         [this, stateId, source, parser](const net::HttpResponse& response) {
             handleSourceResponse(stateId, source, parser, response);
@@ -172,7 +189,7 @@ void Aggregator::finishState(quint64 stateId, const QString& error)
         it->timeoutTimer->deleteLater();
     }
     for (const auto requestId : it->requests) {
-        net::HttpClient::instance().cancel(requestId);
+        requestCanceller_(requestId);
     }
 
     const QString symbol = it->symbol;

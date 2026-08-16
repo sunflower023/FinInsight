@@ -174,7 +174,9 @@ void HttpClient::finishRequest(RequestId requestId)
     response.networkError = request.reply->error();
     response.timedOut = request.timedOut;
     response.cancelled = request.cancelled;
-    response.body = request.reply->readAll();
+    if (request.reply->isOpen()) {
+        response.body = request.reply->readAll();
+    }
 
     if (response.timedOut) {
         response.error = "Request timed out";
