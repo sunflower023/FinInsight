@@ -75,6 +75,13 @@ void DataHub::publishQuote(const QuoteData& quote) {
     emit quotePublished(quote);
 }
 
+void DataHub::publishRealtimeQuote(const QuoteData& quote) {
+    QVariant v;
+    v.setValue(quote);
+    publish(quote.symbol + ".quote.realtime", v);
+    emit realtimeQuotePublished(quote);
+}
+
 void DataHub::publishKLine(const QString& symbol, const QVector<KLineData>& klines) {
     QVariant v;
     v.setValue(klines);

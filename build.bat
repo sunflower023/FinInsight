@@ -20,5 +20,5 @@ cmake --build --preset win-dev --parallel 8
 if %ERRORLEVEL% NEQ 0 ( exit /b 1 )
 
 echo ============================================
-echo  BUILD SUCCESS!  Run: build\win-dev\FinInsight.exe
+echo  BUILD SUCCESS!  Run: build\win-dev\src\FinInsight.exe
 echo ============================================

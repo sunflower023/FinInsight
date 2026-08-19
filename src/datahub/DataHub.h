@@ -41,6 +41,7 @@ public:
 
     // —— 行情快捷方法 ——
     void publishQuote(const QuoteData& quote);
+    void publishRealtimeQuote(const QuoteData& quote);
     void publishKLine(const QString& symbol, const QVector<KLineData>& klines);
 
     // —— 状态 ——
@@ -48,6 +49,7 @@ public:
 
 signals:
     void quotePublished(const QuoteData& quote);
+    void realtimeQuotePublished(const QuoteData& quote);
     void klinePublished(const QString& symbol, const QVector<KLineData>& data);
 
 private:

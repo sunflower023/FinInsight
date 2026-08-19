@@ -6,6 +6,9 @@
 
 #include <QDebug>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace fininsight::datahub {
 

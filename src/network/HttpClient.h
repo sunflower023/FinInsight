@@ -8,6 +8,7 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QHash>
+#include <QMap>
 #include <QPointer>
 #include <QMetaObject>
 
@@ -53,7 +54,14 @@ public:
     // —— 异步请求（不阻塞；上下文销毁时自动取消回调） ——
     // 调用必须发生在 HttpClient 所在线程；context 不能为 nullptr。
     RequestId getAsync(const QString& url, QObject* context,
-                       ResponseHandler handler, int timeoutMs = 8000);
+                       ResponseHandler handler, int timeoutMs = 8000,
+                       const QMap<QByteArray, QByteArray>& headers = {});
+    RequestId postAsync(const QString& url, const QByteArray& body, QObject* context,
+                        ResponseHandler handler, int timeoutMs = 8000,
+                        const QMap<QByteArray, QByteArray>& headers = {});
+    RequestId deleteAsync(const QString& url, QObject* context,
+                          ResponseHandler handler, int timeoutMs = 8000,
+                          const QMap<QByteArray, QByteArray>& headers = {});
     bool cancel(RequestId requestId);
     int activeRequestCount() const { return pending_.size(); }
 
@@ -75,6 +83,8 @@ private:
     };
 
     void finishRequest(RequestId requestId);
+    RequestId trackReply(QNetworkReply* reply, QObject* context,
+                         ResponseHandler handler, int timeoutMs);
 
     QNetworkAccessManager* mgr_;
     QString lastError_;

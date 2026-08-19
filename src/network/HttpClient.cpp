@@ -98,7 +98,8 @@ QByteArray HttpClient::post(const QString& url, const QByteArray& body, int time
 // ── 异步 GET ────────────────────────────────────────
 
 HttpClient::RequestId HttpClient::getAsync(const QString& url, QObject* context,
-                                           ResponseHandler handler, int timeoutMs)
+                                           ResponseHandler handler, int timeoutMs,
+                                           const QMap<QByteArray, QByteArray>& headers)
 {
     Q_ASSERT_X(QThread::currentThread() == thread(), "HttpClient::getAsync",
                "getAsync must be called from the HttpClient thread");
@@ -108,8 +109,44 @@ HttpClient::RequestId HttpClient::getAsync(const QString& url, QObject* context,
 
     QNetworkRequest req{QUrl{url}};
     setupCommonHeaders(req);
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) req.setRawHeader(it.key(), it.value());
 
-    QNetworkReply* reply = mgr_->get(req);
+    return trackReply(mgr_->get(req), context, std::move(handler), timeoutMs);
+}
+
+HttpClient::RequestId HttpClient::postAsync(
+    const QString& url, const QByteArray& body, QObject* context,
+    ResponseHandler handler, int timeoutMs,
+    const QMap<QByteArray, QByteArray>& headers)
+{
+    Q_ASSERT_X(QThread::currentThread() == thread(), "HttpClient::postAsync",
+               "postAsync must be called from the HttpClient thread");
+    if (QThread::currentThread() != thread() || !context || !handler || timeoutMs <= 0)
+        return InvalidRequestId;
+    QNetworkRequest req{QUrl{url}};
+    setupCommonHeaders(req);
+    req.setRawHeader("Content-Type", "application/json");
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) req.setRawHeader(it.key(), it.value());
+    return trackReply(mgr_->post(req, body), context, std::move(handler), timeoutMs);
+}
+
+HttpClient::RequestId HttpClient::deleteAsync(
+    const QString& url, QObject* context, ResponseHandler handler, int timeoutMs,
+    const QMap<QByteArray, QByteArray>& headers)
+{
+    Q_ASSERT_X(QThread::currentThread() == thread(), "HttpClient::deleteAsync",
+               "deleteAsync must be called from the HttpClient thread");
+    if (QThread::currentThread() != thread() || !context || !handler || timeoutMs <= 0)
+        return InvalidRequestId;
+    QNetworkRequest req{QUrl{url}};
+    setupCommonHeaders(req);
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) req.setRawHeader(it.key(), it.value());
+    return trackReply(mgr_->deleteResource(req), context, std::move(handler), timeoutMs);
+}
+
+HttpClient::RequestId HttpClient::trackReply(
+    QNetworkReply* reply, QObject* context, ResponseHandler handler, int timeoutMs)
+{
     const RequestId requestId = nextRequestId_++;
 
     auto* timer = new QTimer(reply);

@@ -1,11 +1,20 @@
 set(SOURCES
     main.cpp
+    analysis/BehaviorAnalyzer.h
+    analysis/BehaviorAnalyzer.cpp
+    analysis/ReviewGenerator.h
+    analysis/ReviewGenerator.cpp
+    analysis/OpenAICompatibleReviewGenerator.h
+    analysis/OpenAICompatibleReviewGenerator.cpp
     app/MainWindow.h
     app/MainWindow.cpp
     core/AppConfig.h
     core/AppConfig.cpp
     market/QuoteRules.h
     market/QuoteRules.cpp
+    market/Instrument.h
+    market/SymbolResolver.h
+    market/SymbolResolver.cpp
     simulation/Ledger.h
     simulation/Ledger.cpp
     simulation/InvestmentExperiment.h
@@ -18,9 +27,18 @@ set(SOURCES
     storage/BaseRepository.h
     storage/StockRepository.h
     storage/StockRepository.cpp
+    storage/EvidenceSnapshotRepository.h
+    storage/EvidenceSnapshotRepository.cpp
     storage/migrations/V001_Initial.h
+    storage/migrations/V002_Evidence.h
+    storage/migrations/V003_FindingEvidence.h
+    storage/migrations/V004_Trading.h
+    storage/TradingOrderRepository.h
+    storage/TradingOrderRepository.cpp
     network/HttpClient.h
     network/HttpClient.cpp
+    network/WebSocketClient.h
+    network/WebSocketClient.cpp
     datahub/QuoteData.h
     datahub/QuoteAdapters.h
     datahub/QuoteAdapters.cpp
@@ -44,6 +62,24 @@ set(SOURCES
     panels/DetailPanel.cpp
     panels/PortfolioPanel.h
     panels/PortfolioPanel.cpp
+    panels/ExperimentPanel.h
+    panels/ExperimentPanel.cpp
+    panels/AgentReviewPanel.h
+    panels/AgentReviewPanel.cpp
+    panels/RealtimeTradingPanel.h
+    panels/RealtimeTradingPanel.cpp
+    panels/NotificationPanel.h
+    panels/NotificationPanel.cpp
+    notifications/NotificationService.h
+    notifications/NotificationService.cpp
+    notifications/TradingNotificationBridge.h
+    notifications/TradingNotificationBridge.cpp
+    monitoring/LatencyTracker.h
+    monitoring/LatencyTracker.cpp
+    monitoring/HealthMonitor.h
+    monitoring/HealthMonitor.cpp
+    panels/HealthPanel.h
+    panels/HealthPanel.cpp
     dsl/Token.h
     dsl/Lexer.h
     dsl/Lexer.cpp
@@ -53,6 +89,22 @@ set(SOURCES
     dsl/Evaluator.cpp
     datahub/Aggregator.h
     datahub/Aggregator.cpp
+    datahub/QuoteStream.h
+    datahub/QuoteStreamService.h
+    datahub/QuoteStreamService.cpp
+    datahub/YahooWebSocketAdapter.h
+    datahub/YahooWebSocketAdapter.cpp
+    trading/TradingTypes.h
+    trading/TradingTypes.cpp
+    trading/RiskEngine.h
+    trading/RiskEngine.cpp
+    trading/ExecutionGateway.h
+    trading/PaperExecutionGateway.h
+    trading/PaperExecutionGateway.cpp
+    trading/OrderService.h
+    trading/OrderService.cpp
+    trading/AlpacaBrokerClient.h
+    trading/AlpacaBrokerClient.cpp
 )
 
 qt_add_executable(FinInsight ${SOURCES})
@@ -63,6 +115,7 @@ target_link_libraries(FinInsight PRIVATE
     Qt6::Widgets
     Qt6::Charts
     Qt6::Network
+    Qt6::WebSockets
     Qt6::Sql
     Qt6::Concurrent
     qtadvanceddocking-qt6

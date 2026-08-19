@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.27)
 project(FinInsight VERSION 1.0.0 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -39,7 +41,12 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # ── Qt6 ────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS Widgets Charts Network Sql Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Charts Network WebSockets Sql Concurrent)
 
 # ── 子目录 ─────────────────────────────────────────────
 add_subdirectory(src)
+
+if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_subdirectory(tests/qt)
+endif()
