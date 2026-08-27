@@ -22,3 +22,4 @@ qrc_*.cpp
 *.log
 .DS_Store
 Thumbs.db
+third_party/

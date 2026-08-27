@@ -26,8 +26,14 @@ FetchContent_Declare(
     UPDATE_DISCONNECTED TRUE
 )
 set(ADS_VERSION "4.5.0" CACHE STRING "" FORCE)
-# Pre-set module path so include(Versioning) in qtads src/CMakeLists succeeds
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/_deps/qtads-src/cmake/modules")
+# Pre-set module path so include(Versioning) in qtads src/CMakeLists succeeds.
+# When FETCHCONTENT_SOURCE_DIR_QTADS is provided (offline / MinGW builds) the
+# module path lives there; otherwise fall back to the FetchContent build tree.
+if(DEFINED FETCHCONTENT_SOURCE_DIR_QTADS)
+  list(APPEND CMAKE_MODULE_PATH "${FETCHCONTENT_SOURCE_DIR_QTADS}/cmake/modules")
+else()
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/_deps/qtads-src/cmake/modules")
+endif()
 FetchContent_MakeAvailable(QtADS)
 set_target_properties(qtadvanceddocking-qt6 PROPERTIES UNITY_BUILD OFF)
 
