@@ -27,6 +27,7 @@ public:
 private slots:
     void onConnected();
     void onBinaryMessage(const QByteArray& message);
+    void onTextMessage(const QString& message);
     void onError(const QString& error);
 
 private:

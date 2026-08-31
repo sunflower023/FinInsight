@@ -38,6 +38,18 @@ bool real64(const QByteArray& data, int& pos, double& value) {
     pos += 8;
     return true;
 }
+
+bool real32(const QByteArray& data, int& pos, float& value) {
+    if (pos + 4 > data.size()) return false;
+    std::memcpy(&value, data.constData() + pos, sizeof(value));
+    pos += 4;
+    return true;
+}
+
+// protobuf sint64 使用 zigzag 编码，需解码回有符号整数
+qint64 zigzag64(quint64 value) {
+    return static_cast<qint64>((value >> 1) ^ -static_cast<qint64>(value & 1));
+}
 }
 
 YahooWebSocketAdapter::YahooWebSocketAdapter(QObject* parent)
@@ -49,6 +61,7 @@ YahooWebSocketAdapter::YahooWebSocketAdapter(const QUrl& endpoint, QObject* pare
     client_->setReconnectPolicy(true, 500, 30000, -1);
     connect(client_, &network::WebSocketClient::connected, this, &YahooWebSocketAdapter::onConnected);
     connect(client_, &network::WebSocketClient::binaryMessageReceived, this, &YahooWebSocketAdapter::onBinaryMessage);
+    connect(client_, &network::WebSocketClient::textMessageReceived, this, &YahooWebSocketAdapter::onTextMessage);
     connect(client_, &network::WebSocketClient::errorOccurred, this, &YahooWebSocketAdapter::onError);
     connect(client_, &network::WebSocketClient::disconnected, this, [this] { emit statusChanged(QStringLiteral("disconnected")); });
 }
@@ -82,6 +95,15 @@ void YahooWebSocketAdapter::onBinaryMessage(const QByteArray& message) {
     emit quoteReceived(quote);
 }
 
+void YahooWebSocketAdapter::onTextMessage(const QString& message) {
+    // Yahoo streamer 目前把 Protobuf 二进制用 Base64 编码后作为文本消息发送，
+    // 需先解码回二进制再解析（否则收不到报价、状态一直停在「连接中」）。
+    const QByteArray raw = QByteArray::fromBase64(message.toUtf8());
+    QuoteData quote;
+    if (!parsePricingData(raw, quote)) return;
+    emit quoteReceived(quote);
+}
+
 void YahooWebSocketAdapter::onError(const QString& error) { emit errorOccurred(error); }
 
 void YahooWebSocketAdapter::sendSymbols(const QString& action, const QStringList& symbols) {
@@ -98,18 +120,20 @@ bool YahooWebSocketAdapter::parsePricingData(const QByteArray& data, QuoteData& 
         const int field = static_cast<int>(tag >> 3);
         const int wire = static_cast<int>(tag & 7);
         if (wire == 1) {
+            // 64-bit double（兼容旧协议 / 可能的扩展字段）
             double value = 0.0;
             if (!real64(data, pos, value)) return false;
             if (field == 2) quote.price = value;
             else if (field == 8) quote.changePercent = value;
-            else if (field == 9) quote.volume = static_cast<qint64>(value);
             else if (field == 10) quote.high = value;
             else if (field == 11) quote.low = value;
             else if (field == 12) quote.change = value;
         } else if (wire == 0) {
+            // varint：time/volume 为 sint64（zigzag 编码）
             quint64 value = 0;
             if (!varint(data, pos, value)) return false;
-            if (field == 3) quote.timestamp = static_cast<qint64>(value);
+            if (field == 3) quote.timestamp = zigzag64(value);
+            else if (field == 9) quote.volume = zigzag64(value);
         } else if (wire == 2) {
             QByteArray value;
             if (!bytes(data, pos, value)) return false;
@@ -117,8 +141,14 @@ bool YahooWebSocketAdapter::parsePricingData(const QByteArray& data, QuoteData& 
             else if (field == 4) quote.currency = QString::fromUtf8(value);
             else if (field == 5) quote.exchange = QString::fromUtf8(value);
         } else if (wire == 5) {
-            if (pos + 4 > data.size()) return false;
-            pos += 4;
+            // 32-bit float：Yahoo 当前把 price/change/changePercent/high/low 用 float 发送
+            float value = 0.0f;
+            if (!real32(data, pos, value)) return false;
+            if (field == 2) quote.price = static_cast<double>(value);
+            else if (field == 8) quote.changePercent = static_cast<double>(value);
+            else if (field == 10) quote.high = static_cast<double>(value);
+            else if (field == 11) quote.low = static_cast<double>(value);
+            else if (field == 12) quote.change = static_cast<double>(value);
         } else {
             return false;
         }
