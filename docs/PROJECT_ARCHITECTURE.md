@@ -4,7 +4,7 @@
 
 ## 1. 项目定位
 
-FinInsight 是 C++20 + Qt6 Widgets 的桌面金融行情分析原型。当前主流程是：搜索股票 → 请求 Yahoo Finance → 解析报价/K 线 → 写入缓存并发布到进程内 DataHub → 面板和 K 线图刷新。模拟投资、DSL 回测、AI Agent 目前属于演进方向，组合面板只有 UI 原型。
+FinInsight 是 C++20 + Qt6 Widgets 的桌面金融行情分析与模拟投资原型。当前主流程是：搜索股票 → 请求 Yahoo Finance → 解析报价/K 线 → 写入缓存并发布到进程内 DataHub → 面板和 K 线图刷新。模拟组合已具备内存交易闭环；历史实验 UI、DSL 回测和 AI Agent 仍属于演进方向。
 
 ## 2. 分层与依赖
 
@@ -86,7 +86,7 @@ DataHub 会保存每个主题最后一条数据；新订阅默认回放缓存。
 | 文件 | 实现与职责 | 当前状态 |
 |---|---|---|
 | `src/datahub/QuoteData.h` | `QuoteData`/`KLineData` 传输结构；日线可保存可选复权收盘价 | 已接入 |
-| `src/datahub/HistoricalPriceAdapter.h`、`src/datahub/HistoricalPriceAdapter.cpp` | 将 Qt K 线桥接到严格校验的实验价格序列 | 已实现；尚未接入 UI |
+| `src/datahub/HistoricalPriceAdapter.h`、`src/datahub/HistoricalPriceAdapter.cpp` | 将 Qt K 线桥接到严格校验的实验价格序列 | 已接入 ExperimentPanel；独立测试覆盖 |
 | `src/datahub/DataHub.h`、`src/datahub/DataHub.cpp` | 单例发布/订阅、主题通配、最后值回放、线程锁 | 已接入 |
 | `src/datahub/YahooProducer.h`、`src/datahub/YahooProducer.cpp` | Yahoo quote/chart JSON 请求、解析、缓存优先策略，并发布标准数据 | 主流程使用 |
 | `src/datahub/QuoteAdapters.h`、`src/datahub/QuoteAdapters.cpp` | Yahoo/EastMoney/Sina URL 构建与报价 JSON 适配 | 共享适配器 |
@@ -137,20 +137,21 @@ flowchart LR
 | `src/panels/StockSearchBar.h`、`src/panels/StockSearchBar.cpp` | 股票代码输入、回车校验并发出 `searchRequested` | 已接入 |
 | `src/panels/StockListPanel.h`、`src/panels/StockListPanel.cpp` | 自选股列表，添加、删除、双击选中、更新价格 | 已接入；内存状态 |
 | `src/panels/DetailPanel.h`、`src/panels/DetailPanel.cpp` | 8 行行情字段表格，响应 `QuoteData` | 已接入 |
-| `src/panels/PortfolioPanel.h`、`src/panels/PortfolioPanel.cpp` | 10 万美元初始现金、买卖控件、交易历史表和持仓结构 | UI 原型；买卖逻辑和报价联动未完成 |
+| `src/panels/PortfolioPanel.h`、`src/panels/PortfolioPanel.cpp` | 10 万美元模拟账户、当前报价买卖、手续费、交易记录、持仓估值和盈亏展示 | 已接入 Ledger；状态仅在内存中 |
 
 ### 5.7 市场规则与模拟账本
 
 | 文件 | 实现与职责 | 当前状态 |
 |---|---|---|
 | market/QuoteRules.h/.cpp | 纯 C++ 标的规范化、数据源路由、报价校验和错误汇总 | 已实现；独立测试覆盖 |
-| simulation/Ledger.h/.cpp | 纯 C++ 虚拟现金、成交、持仓成本、手续费和盈亏计算 | 核心初版；尚未接入 UI/SQLite |
-| simulation/InvestmentExperiment.h/.cpp | 纯 C++ 单标的历史买入持有实验，计算实际成交/估值边界、收益和最大回撤 | 核心已实现；尚未接入历史行情/UI |
-| simulation/HistoricalPriceSeries.h/.cpp | 校验标的、ISO 交易日、顺序和收盘价/复权价口径，生成实验 `PricePoint` | 核心已实现；独立测试覆盖 |
+| simulation/Ledger.h/.cpp | 纯 C++ 虚拟现金、成交、持仓成本、手续费和盈亏计算 | 已接入 PortfolioPanel；SQLite 尚未接入 |
+| `src/panels/ExperimentPanel.h`、`src/panels/ExperimentPanel.cpp` | 历史买入持有实验输入、K 线价格口径选择、收益率/回撤结果展示 | 已接入 MainWindow；结果仅在内存中 |
+| simulation/InvestmentExperiment.h/.cpp | 纯 C++ 单标的历史买入持有实验，计算实际成交/估值边界、收益和最大回撤 | 核心已实现；由 Qt 实验面板调用 |
+| simulation/HistoricalPriceSeries.h/.cpp | 校验标的、ISO 交易日、顺序和收盘价/复权价口径，生成实验 `PricePoint` | 核心已实现；Qt 桥接和独立测试覆盖 |
 
 ## 6. 当前组合模拟的真实边界
 
-`PortfolioPanel` 目前只定义了 `Trade`、`Position`、现金和表格；`onBuyClicked()`/`onSellClicked()` 尚未执行成交，`onQuoteUpdated()` 也尚未更新浮动盈亏。独立账本和单标的历史买入持有实验已具备，但尚未连接历史 K 线、QWidget 或 SQLite。后续由面板调用领域模块，不在 QWidget 中重复金融计算。
+`PortfolioPanel` 接收 MainWindow 当前标的和最新报价，调用唯一的 `simulation::Ledger` 执行买卖并展示现金、持仓市值、总权益、已实现/未实现盈亏、收益率和账本交易记录。面板不重复成交计算。`ExperimentPanel` 则接收 K 线并运行历史买入持有实验。两类状态仍只在内存中，SQLite 尚未接入。
 
 建议未来链路：
 
@@ -184,6 +185,12 @@ flowchart LR
 - 新指标优先写成无 UI 的纯函数，并添加短输入、空输入和异常输入测试。
 - QWidget 不应直接承担网络重试、长 SQL 或回测计算。
 - 涉及模拟交易的结果必须记录输入、价格口径、时间范围和手续费，确保可复现；界面需标注模拟性质。
+
+## 当前实验 UI 状态
+
+`ExperimentPanel` 已连接 MainWindow 的 K 线回调，按 `HistoricalPriceAdapter -> HistoricalPriceSeries -> InvestmentExperiment` 运行单标的买入持有实验，并展示成交边界、期末权益、收益率和最大回撤。实验参数和结果目前只保存在内存中，SQLite 快照尚未实现。
+
+WebSocket 传输层由 `network::WebSocketClient` 提供，当前已有实验性的 `YahooWebSocketAdapter` 将 Yahoo streamer Protobuf ticker 转换为 `QuoteData` 并发布到 `<symbol>.quote.realtime`。连接、心跳、重连退避和原始消息转发通过本地 `QWebSocketServer` 回环测试验证；该适配器尚未接入 MainWindow 股票主链路，也不会绕过 Aggregator 和 DataHub 质量规则。
 
 ## 9. 相关文档
 

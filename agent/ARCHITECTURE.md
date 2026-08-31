@@ -30,7 +30,7 @@ UI 负责展示和编排；DataHub 负责进程内数据分发；Producer 负责
 规划中的实时主题：
 
 - `<symbol>.quote.realtime`：WebSocket 或其他实时流规范化后的 `QuoteData`。
-- 实时主题只有在 WebSocket 客户端具备断线、重连和数据质量状态后才加入主链路；当前尚未实现。
+- Yahoo 实验性 streamer 已能发布该主题；它仍是独立实时源，尚未替换 Yahoo HTTP 股票报价主链路。
 
 发布者不应直接持有面板指针；面板在析构前必须取消订阅。回调在 DataHub 锁外执行，回调中允许再次订阅或发布。
 
@@ -39,8 +39,8 @@ UI 负责展示和编排；DataHub 负责进程内数据分发；Producer 负责
 ```text
 MainWindow -> YahooProducer -> HttpClient(getAsync) -> Yahoo Finance
            -> DataHub -> Detail/StockList/KLineChart
-PortfolioPanel 目前只创建 UI，尚未调用 Ledger。
-Aggregator、HistoricalPriceAdapter 和 simulation 核心存在，但尚未全部接入该链路。
+PortfolioPanel 已接收 MainWindow 的当前标的和报价，并仅通过 Ledger 完成模拟成交与估值；状态仍只保存在内存中。
+Aggregator 仍未接入该主链路；HistoricalPriceAdapter 已接入 MainWindow 的历史实验链路。
 ```
 
 ## 目标业务链路

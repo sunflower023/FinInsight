@@ -11,7 +11,22 @@ src/panels/
 ├── StockSearchBar.h / .cpp    ← 顶部搜索框（回车触发）
 ├── StockListPanel.h / .cpp    ← 左侧自选股列表
 ├── DetailPanel.h / .cpp       ← 右侧股票详情
-└── PortfolioPanel.h / .cpp    ← 底部模拟组合（框架）
+├── PortfolioPanel.h / .cpp    ← 底部模拟组合（Ledger 内存闭环）
+└── ExperimentPanel.h / .cpp   ← 历史买入持有实验（K 线桥接与风险结果）
+```
+
+### 4.5 ExperimentPanel
+
+```
+职责：基于当前标的日 K 线运行可复现的单标的历史买入持有实验。
+
+输入：起止日期、初始资金、买入手续费、Close/Adjusted Close 价格口径。
+输出：成交日期/价格、期末现金/市值/权益、收益率、最大回撤和错误原因。
+
+数据流：MainWindow K 线回调 → HistoricalPriceAdapter → HistoricalPriceSeries
+       → InvestmentExperiment → 面板结果标签。
+
+当前限制：结果仅保存在内存中；暂不处理交易日历、滑点、税费、公司行动和多币种。
 ```
 
 ---
@@ -121,17 +136,18 @@ sequenceDiagram
 ### 4.4 PortfolioPanel
 
 ```
-职责：模拟交易面板（框架已搭建，功能待完善）
+职责：基于唯一 Ledger 的模拟交易、估值和交易记录面板
 
 当前状态：
-  - UI 完整（账户摘要 + 下单区 + 交易记录表）
-  - 初始资金 $100,000
-  - onBuyClicked / onSellClicked 空实现
+  - 初始模拟资金 $100,000
+  - 联动当前选中标的和最新 QuoteData
+  - Ledger 执行买卖、手续费、余额和持仓校验
+  - 展示现金、持仓市值、总权益、已实现/未实现盈亏和收益率
+  - 展示账本成交价格、手续费、实现盈亏和时间戳
 
 后续完善：
-  - 联动当前选中股票，自动填充价格
-  - 实时计算浮动盈亏
-  - 交易记录持久化到 SQLite
+  - 交易、持仓和估值快照持久化到 SQLite
+  - 明确多币种账户和价格陈旧状态
 ```
 
 ---

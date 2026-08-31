@@ -98,7 +98,7 @@ cd FinInsight
 | K 线图 + 技术指标 | MA/BOLL 已接入；其他指标为算法模块 | 部分 |
 | DSL 表达式引擎 | 递归下降 Parser + AST 求值，尚未接入回测 | 独立模块 |
 | 多源聚合器 | QtConcurrent 原型，尚未达到真正 first-valid | 原型 |
-| 自选股 / 详情 / 组合 | StockList + Detail 已接入；Portfolio 为 UI 原型 | 部分 |
+| 自选股 / 详情 / 组合 | StockList + Detail 已接入；Portfolio 已接入内存账本，尚未持久化 | 部分 |
 | WebSocket 实时推送 | 实时行情（规划中） | 💡 |
 | AI Agent 集成 | LLM 工具调用（规划中） | 💡 |
 

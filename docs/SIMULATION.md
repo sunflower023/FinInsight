@@ -14,6 +14,7 @@ and SQLite code must call this layer rather than duplicating trade math.
 - Realized and unrealized profit and loss
 - Portfolio market value, total equity, and return rate
 - Explicit errors for invalid orders and missing valuation prices
+- Qt PortfolioPanel integration for current-quote trades and live valuation
 - Single-symbol historical buy-and-hold experiments
 - Maximum drawdown over the post-purchase equity curve
 

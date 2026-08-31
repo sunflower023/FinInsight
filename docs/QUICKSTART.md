@@ -6,7 +6,7 @@
 
 ## 1. 当前项目定位
 
-FinInsight 是一个 C++20/Qt6 桌面行情分析原型，当前已经打通一条可运行的主链路：
+FinInsight 是一个 C++20/Qt6 桌面行情分析与模拟投资原型，当前已经打通行情、模拟组合和历史实验的可运行主链路：
 
 ```mermaid
 flowchart LR
@@ -18,6 +18,8 @@ flowchart LR
     Y --> DH[DataHub 发布订阅]
     DH --> C[KLineChart]
     DH --> D[DetailPanel / StockListPanel]
+    C --> E[Historical Experiment]
+    Q[Current Quote] --> F[Simulation Portfolio]
 ```
 
 项目目前是“可持续演进的基础版本”，而不是完整交易终端。DSL、指标计算、多源聚合器等模块已经存在，但部分尚未接入完整用户流程。
@@ -77,7 +79,7 @@ cmake --build --preset win-dev
 
 - Yahoo 和 EastMoney Producer 已使用可取消的异步请求；Aggregator 已使用异步状态机，旧同步接口暂作为兼容实现保留。
 - `Aggregator` 已有异步竞速原型，并按标的路由数据源；尚未接入主流程，不能视为生产级竞速器。
-- 组合交易面板目前是 UI 原型，买卖和持仓持久化尚未完成。
+- 组合交易面板已接入纯 C++ Ledger，支持当前报价买卖、手续费、持仓估值和盈亏展示；状态仍仅在内存中，尚未持久化。
 - DSL 尚未接入策略回测流程。
 - 指标和解析器应优先通过单元测试覆盖后再扩展。
 

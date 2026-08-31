@@ -23,3 +23,4 @@ qrc_*.cpp
 .DS_Store
 Thumbs.db
 third_party/
+.workbuddy/
