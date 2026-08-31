@@ -1,6 +1,9 @@
 #include "storage/Database.h"
 #include "storage/Migration.h"
 #include "storage/migrations/V001_Initial.h"
+#include "storage/migrations/V002_Evidence.h"
+#include "storage/migrations/V003_FindingEvidence.h"
+#include "storage/migrations/V004_Trading.h"
 
 #include <QApplication>
 #include <QDir>
@@ -170,7 +173,9 @@ void Database::applyMigrations() {
     // 构建迁移列表（新增版本只需往下加一行）
     QVector<Migration> migrations = {
         {1, "Initial schema (stocks, klines, watchlist)", V001_Initial::up},
-        // {2, "Add portfolio table", V002_Portfolio::up},  ← 未来扩展
+        {2, "Evidence snapshots and behavior findings", V002_Evidence::up},
+        {3, "Finding evidence references", V003_FindingEvidence::up},
+        {4, "Realtime trading orders", V004_Trading::up},
     };
 
     // 创建 schema_version 表（如果不存在）
