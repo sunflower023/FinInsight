@@ -28,6 +28,9 @@ public:
     ~AgentReviewPanel() override;
     void refresh();
 
+    /// 语言切换时刷新界面文本
+    void retranslateUi();
+
 private slots:
     void loadSelected(int index);
     void highlightFinding(QListWidgetItem* item);

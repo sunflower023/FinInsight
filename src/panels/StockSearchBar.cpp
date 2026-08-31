@@ -1,4 +1,5 @@
 #include "panels/StockSearchBar.h"
+#include "core/I18n.h"
 
 #include <QRegularExpression>
 
@@ -8,12 +9,16 @@ StockSearchBar::StockSearchBar(QWidget* parent)
     : QLineEdit(parent)
     , debounceTimer_(new QTimer(this))
 {
-    setPlaceholderText("Enter stock symbol and press Enter (e.g. AAPL, TSLA, 600519)");
     setClearButtonEnabled(true);
     setMinimumHeight(40);
     setMaximumHeight(44);
 
     connect(this, &QLineEdit::returnPressed, this, &StockSearchBar::onReturnPressed);
+    retranslateUi();
+}
+
+void StockSearchBar::retranslateUi() {
+    setPlaceholderText(I18n::instance().t("Enter stock symbol and press Enter (e.g. AAPL, TSLA, 600519)"));
 }
 
 void StockSearchBar::onReturnPressed() {

@@ -1,4 +1,5 @@
 #include "panels/AgentReviewPanel.h"
+#include "core/I18n.h"
 
 #include "storage/EvidenceSnapshotRepository.h"
 #include "analysis/ReviewGenerator.h"
@@ -36,18 +37,16 @@ AgentReviewPanel::AgentReviewPanel(storage::EvidenceSnapshotRepository& reposito
     review_->setWordWrap(true);
     layout->addWidget(review_);
     auto* modelRow = new QHBoxLayout;
-    generateButton_ = new QPushButton(QStringLiteral("Generate Model Review"));
+    generateButton_ = new QPushButton;
     generateButton_->setObjectName(QStringLiteral("agentGenerateButton"));
-    cancelButton_ = new QPushButton(QStringLiteral("Cancel")); cancelButton_->setObjectName(QStringLiteral("agentCancelButton")); cancelButton_->setEnabled(false);
-    modelStatus_ = new QLabel(QStringLiteral("Deterministic offline review")); modelStatus_->setObjectName(QStringLiteral("agentModelStatusLabel"));
+    cancelButton_ = new QPushButton; cancelButton_->setObjectName(QStringLiteral("agentCancelButton")); cancelButton_->setEnabled(false);
+    modelStatus_ = new QLabel; modelStatus_->setObjectName(QStringLiteral("agentModelStatusLabel"));
     modelRow->addWidget(generateButton_); modelRow->addWidget(cancelButton_); modelRow->addWidget(modelStatus_, 1); layout->addLayout(modelRow);
     findings_ = new QListWidget;
     findings_->setObjectName(QStringLiteral("agentFindingsList"));
     layout->addWidget(findings_);
     trades_ = new QTableWidget(0, 5);
     trades_->setObjectName(QStringLiteral("agentTradesTable"));
-    trades_->setHorizontalHeaderLabels({QStringLiteral("Side"), QStringLiteral("Symbol"),
-        QStringLiteral("Qty"), QStringLiteral("Price"), QStringLiteral("Time")});
     trades_->horizontalHeader()->setStretchLastSection(true);
     trades_->verticalHeader()->setVisible(false);
     trades_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -62,13 +61,23 @@ AgentReviewPanel::AgentReviewPanel(storage::EvidenceSnapshotRepository& reposito
     config.apiKey = env.value(QStringLiteral("FININSIGHT_LLM_API_KEY")); config.model = env.value(QStringLiteral("FININSIGHT_LLM_MODEL"), QStringLiteral("gpt-4.1-mini"));
     modelGenerator_ = std::make_unique<analysis::OpenAICompatibleReviewGenerator>(config, this);
     connect(generateButton_, &QPushButton::clicked, this, &AgentReviewPanel::generateModelReview);
-    connect(cancelButton_, &QPushButton::clicked, this, [this] { modelGenerator_->cancel(); activeRequestId_.clear(); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); modelStatus_->setText(QStringLiteral("Cancelled; deterministic review retained")); });
+    connect(cancelButton_, &QPushButton::clicked, this, [this] { modelGenerator_->cancel(); activeRequestId_.clear(); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); modelStatus_->setText(I18n::instance().t("Cancelled; deterministic review retained")); });
     connect(modelGenerator_.get(), &analysis::OpenAICompatibleReviewGenerator::completed, this, [this](const QString& id, const QString& text) {
-        if (id != activeRequestId_) return; activeRequestId_.clear(); review_->setText(text); modelStatus_->setText(QStringLiteral("Model-generated review")); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); });
+        if (id != activeRequestId_) return; activeRequestId_.clear(); review_->setText(text); modelStatus_->setText(I18n::instance().t("Model-generated review")); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); });
     connect(modelGenerator_.get(), &analysis::OpenAICompatibleReviewGenerator::failed, this, [this](const QString& id, const QString& error) {
-        if (id != activeRequestId_) return; activeRequestId_.clear(); modelStatus_->setText(QStringLiteral("Model unavailable: %1; deterministic review retained").arg(error)); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); });
+        if (id != activeRequestId_) return; activeRequestId_.clear(); modelStatus_->setText(I18n::instance().t("Model unavailable: %1; deterministic review retained").arg(error)); cancelButton_->setEnabled(false); generateButton_->setEnabled(true); });
+    retranslateUi();
     clearDetail();
     refresh();
+}
+
+void AgentReviewPanel::retranslateUi()
+{
+    generateButton_->setText(I18n::instance().t("Generate Model Review"));
+    cancelButton_->setText(I18n::instance().t("Cancel"));
+    modelStatus_->setText(I18n::instance().t("Deterministic offline review"));
+    trades_->setHorizontalHeaderLabels({I18n::instance().t("Side"), I18n::instance().t("Symbol"),
+        I18n::instance().t("Qty"), I18n::instance().t("Price"), I18n::instance().t("Time")});
 }
 AgentReviewPanel::~AgentReviewPanel() = default;
 
@@ -119,7 +128,7 @@ void AgentReviewPanel::loadSelected(int index) {
         paragraphs.push_back(QString::fromStdString(paragraph));
     review_->setText(paragraphs.join(QStringLiteral("\n")));
     currentEvidence_ = evidence; currentReport_ = report;
-    modelStatus_->setText(modelGenerator_ && modelGenerator_->isConfigured() ? QStringLiteral("Model configured; deterministic review shown") : QStringLiteral("No model key; deterministic offline review"));
+    modelStatus_->setText(modelGenerator_ && modelGenerator_->isConfigured() ? I18n::instance().t("Model configured; deterministic review shown") : I18n::instance().t("No model key; deterministic offline review"));
     generateButton_->setEnabled(true); cancelButton_->setEnabled(false);
     findingTradeIds_.clear();
     for (const auto& finding : detail->findings) {
@@ -144,7 +153,7 @@ void AgentReviewPanel::generateModelReview()
 {
     if (!modelGenerator_ || currentEvidence_.trades.empty()) return;
     activeRequestId_ = modelGenerator_->generateAsync(currentEvidence_, currentReport_);
-    generateButton_->setEnabled(false); cancelButton_->setEnabled(true); modelStatus_->setText(QStringLiteral("Generating model review..."));
+    generateButton_->setEnabled(false); cancelButton_->setEnabled(true); modelStatus_->setText(I18n::instance().t("Generating model review..."));
 }
 
 void AgentReviewPanel::highlightFinding(QListWidgetItem* item) {
@@ -159,8 +168,8 @@ void AgentReviewPanel::highlightFinding(QListWidgetItem* item) {
 }
 
 void AgentReviewPanel::clearDetail() {
-    summary_->setText(QStringLiteral("No saved evidence snapshot"));
-    review_->setText(QStringLiteral("No deterministic review available"));
+    summary_->setText(I18n::instance().t("No saved evidence snapshot"));
+    review_->setText(I18n::instance().t("No deterministic review available"));
     findings_->clear();
     findingTradeIds_.clear();
     trades_->setRowCount(0);

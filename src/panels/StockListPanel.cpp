@@ -1,4 +1,5 @@
 #include "panels/StockListPanel.h"
+#include "core/I18n.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -13,22 +14,30 @@ StockListPanel::StockListPanel(QWidget* parent)
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(8);
 
-    auto* title = new QLabel("Watchlist");
-    title->setStyleSheet("font-weight:600; font-size:13px; color:#5f6368;"
+    titleLabel_ = new QLabel;
+    titleLabel_->setStyleSheet("font-weight:600; font-size:13px; color:#5f6368;"
                          "letter-spacing:0.3px; padding:0 0 6px 0;");
-    layout->addWidget(title);
+    layout->addWidget(titleLabel_);
 
     listWidget_ = new QListWidget();
     listWidget_->setAlternatingRowColors(true);
     layout->addWidget(listWidget_);
 
-    btnRemove_ = new QPushButton("Remove");
+    btnRemove_ = new QPushButton;
     layout->addWidget(btnRemove_);
 
     connect(listWidget_, &QListWidget::itemDoubleClicked,
             this, &StockListPanel::onItemDoubleClicked);
     connect(btnRemove_, &QPushButton::clicked,
             this, &StockListPanel::onRemoveClicked);
+
+    retranslateUi();
+}
+
+void StockListPanel::retranslateUi()
+{
+    titleLabel_->setText(I18n::instance().t("Watchlist"));
+    btnRemove_->setText(I18n::instance().t("Remove"));
 }
 
 void StockListPanel::addStock(const QString& symbol, const QString& name) {

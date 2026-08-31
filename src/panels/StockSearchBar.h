@@ -16,6 +16,9 @@ class StockSearchBar : public QLineEdit {
 public:
     explicit StockSearchBar(QWidget* parent = nullptr);
 
+    /// 语言切换时刷新界面文本
+    void retranslateUi();
+
 signals:
     /// 用户触发查询（回车或防抖超时）
     void searchRequested(const QString& symbol);

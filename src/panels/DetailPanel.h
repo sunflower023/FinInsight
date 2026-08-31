@@ -5,6 +5,8 @@
 #include <QWidget>
 #include <QTableWidget>
 
+class QLabel;
+
 namespace fininsight::panels {
 
 /**
@@ -16,6 +18,9 @@ class DetailPanel : public QWidget {
 public:
     explicit DetailPanel(QWidget* parent = nullptr);
 
+    /// 语言切换时刷新界面文本
+    void retranslateUi();
+
     /// 收到新行情数据时更新显示
     void updateQuote(const datahub::QuoteData& quote);
 
@@ -23,6 +28,7 @@ public:
     void clear();
 
 private:
+    QLabel* titleLabel_;
     QTableWidget* table_;
 };
 

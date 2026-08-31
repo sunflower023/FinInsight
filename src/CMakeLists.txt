@@ -10,6 +10,8 @@ set(SOURCES
     app/MainWindow.cpp
     core/AppConfig.h
     core/AppConfig.cpp
+    core/I18n.h
+    core/I18n.cpp
     market/QuoteRules.h
     market/QuoteRules.cpp
     market/Instrument.h

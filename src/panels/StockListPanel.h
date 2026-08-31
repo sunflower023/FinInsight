@@ -7,6 +7,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+class QLabel;
+
 namespace fininsight::panels {
 
 /**
@@ -17,6 +19,9 @@ class StockListPanel : public QWidget {
 
 public:
     explicit StockListPanel(QWidget* parent = nullptr);
+
+    /// 语言切换时刷新界面文本
+    void retranslateUi();
 
     /// 外部调：添加一只股票到列表
     void addStock(const QString& symbol, const QString& name);
@@ -33,6 +38,7 @@ private slots:
     void onRemoveClicked();
 
 private:
+    QLabel* titleLabel_;
     QListWidget* listWidget_;
     QPushButton* btnRemove_;
 };
