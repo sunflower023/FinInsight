@@ -177,6 +177,13 @@ QVector<KLineData> YahooProducer::parseKLine(const QByteArray& json,
     }
 
     for (int i = 0; i < timestamps.size(); ++i) {
+        // Yahoo 对当日盘中未收盘的数据，close/adjclose 字段返回 null；
+        // 若不跳过，toDouble() 会把 null 转成 0，画出一根跌到 0 的假 K 线。
+        if (!opens[i].isDouble() || !highs[i].isDouble() ||
+            !lows[i].isDouble() || !closes[i].isDouble()) {
+            continue;
+        }
+
         KLineData bar;
         bar.symbol = symbol;
         bar.date   = QDateTime::fromSecsSinceEpoch(
@@ -192,8 +199,6 @@ QVector<KLineData> YahooProducer::parseKLine(const QByteArray& json,
         }
         bar.volume = static_cast<qint64>(volumes[i].toDouble());
 
-        // 跳过空数据
-        if (bar.open == 0 && bar.close == 0) continue;
         result.append(bar);
     }
 

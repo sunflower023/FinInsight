@@ -6,7 +6,12 @@
 #include <QWheelEvent>
 #include <QPen>
 #include <QCandlestickSet>
+#include <QGraphicsLineItem>
+#include <QGraphicsSimpleTextItem>
+#include <QGraphicsScene>
 #include <QDebug>
+
+#include <limits>
 
 namespace fininsight::charts {
 
@@ -30,7 +35,8 @@ KLineChart::KLineChart(QWidget* parent)
     setChart(chart_);
     setRenderHint(QPainter::Antialiasing, true);
     setDragMode(QGraphicsView::NoDrag);
-    setRubberBand(QChartView::RectangleRubberBand);
+    // 不启用框选缩放（左键只用于点选蜡烛，避免出现跟随鼠标的矩形框）
+    setRubberBand(QChartView::NoRubberBand);
 
     // 坐标轴 — 浅色网格
     axisX_ = new QDateTimeAxis();
@@ -45,6 +51,34 @@ KLineChart::KLineChart(QWidget* parent)
     axisY_->setGridLineColor(QColor("#e8eaed"));
     axisY_->setLinePenColor(QColor("#d0d7de"));
     chart_->addAxis(axisY_, Qt::AlignRight);
+
+    // —— 十字光标（两条虚线）——
+    crossHairV_ = new QGraphicsLineItem();
+    crossHairV_->setPen(QPen(QColor("#9aa0a6"), 1, Qt::DashLine));
+    crossHairV_->setZValue(10);
+    crossHairV_->hide();
+    scene()->addItem(crossHairV_);
+
+    crossHairH_ = new QGraphicsLineItem();
+    crossHairH_->setPen(QPen(QColor("#9aa0a6"), 1, Qt::DashLine));
+    crossHairH_->setZValue(10);
+    crossHairH_->hide();
+    scene()->addItem(crossHairH_);
+
+    // —— 选中蜡烛的竖线标记 ——
+    selectionLine_ = new QGraphicsLineItem();
+    selectionLine_->setPen(QPen(QColor("#1a73e8"), 2, Qt::SolidLine));
+    selectionLine_->setZValue(9);
+    selectionLine_->hide();
+    scene()->addItem(selectionLine_);
+
+    // —— 悬停提示框 ——
+    tooltip_ = new QGraphicsSimpleTextItem();
+    tooltip_->setBrush(QBrush(QColor("#1e1e1e")));
+    tooltip_->setFont(QFont("Consolas", 9));
+    tooltip_->setZValue(11);
+    tooltip_->hide();
+    scene()->addItem(tooltip_);
 }
 
 // ── 设置数据 ────────────────────────────────────────
@@ -52,10 +86,15 @@ KLineChart::KLineChart(QWidget* parent)
 void KLineChart::setData(const QVector<datahub::KLineData>& bars) {
     if (bars.isEmpty()) return;
 
+    // 保存数据用于「坐标 → 蜡烛」映射与选时点
+    bars_ = bars;
+    selectedIndex_ = -1;
+
     // 清理旧数据
     chart_->removeAllSeries();
     for (auto* ax : chart_->axes())
         chart_->removeAxis(ax);
+    tradeMarkers_ = nullptr;  // removeAllSeries 已删除，指针复位
 
     // 重建坐标轴
     axisX_ = new QDateTimeAxis();
@@ -194,10 +233,10 @@ void KLineChart::addBollinger() {
 }
 
 void KLineChart::clearIndicators() {
-    // 移除所有非 K 线的 series
+    // 移除所有非 K 线的 series（保留 K 线与买卖标记）
     auto all = chart_->series();
     for (auto* s : all) {
-        if (s != candleSeries_) {
+        if (s != candleSeries_ && s != tradeMarkers_) {
             chart_->removeSeries(s);
             delete s;
         }
@@ -206,33 +245,58 @@ void KLineChart::clearIndicators() {
 
 // ── 缩放 ────────────────────────────────────────────
 
+void KLineChart::applyZoom(double factor) {
+    const double next = zoomFactor_ * factor;
+    // 下界 1.0 = 原始尺寸，上界 64 倍，防止越缩越小或无限放大
+    if (next < 1.0 || next > 64.0) return;
+    chart_->zoom(factor);
+    zoomFactor_ = next;
+}
+
 void KLineChart::zoomIn() {
-    chart_->zoom(1.3);
+    applyZoom(1.3);
 }
 
 void KLineChart::zoomOut() {
-    chart_->zoom(0.77);
+    applyZoom(1.0 / 1.3);
 }
 
 void KLineChart::resetZoom() {
     chart_->zoomReset();
+    zoomFactor_ = 1.0;
 }
 
 void KLineChart::wheelEvent(QWheelEvent* event) {
     if (event->angleDelta().y() > 0)
-        chart_->zoom(1.1);
+        applyZoom(1.1);
     else
-        chart_->zoom(0.9);
+        applyZoom(1.0 / 1.1);
+    event->accept();
 }
 
-// ── 拖拽平移 + 十字光标 ─────────────────────────────
+// 双击左键：恢复到原始尺寸（解决放大后无法拉回的问题）
+void KLineChart::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        resetZoom();
+        event->accept();
+        return;
+    }
+    QChartView::mouseDoubleClickEvent(event);
+}
+
+// ── 拖拽平移 + 十字光标 + 点击选时点 ────────────────
 
 void KLineChart::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton) {
         isDragging_ = true;
         lastMousePos_ = event->pos();
         setCursor(Qt::ClosedHandCursor);
+        event->accept();
         return;
+    }
+    if (event->button() == Qt::LeftButton) {
+        pressPos_ = event->pos();
+        leftPressed_ = true;
     }
     QChartView::mousePressEvent(event);
 }
@@ -242,8 +306,13 @@ void KLineChart::mouseMoveEvent(QMouseEvent* event) {
         QPointF delta = event->pos() - lastMousePos_;
         chart_->scroll(-delta.x(), delta.y());
         lastMousePos_ = event->pos();
+        event->accept();
         return;
     }
+    // 十字光标 + 悬停
+    updateCrosshair(event->pos());
+    const int index = barIndexAt(event->pos());
+    if (index >= 0) emit barHovered(index, bars_[index]);
     QChartView::mouseMoveEvent(event);
 }
 
@@ -251,9 +320,149 @@ void KLineChart::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton && isDragging_) {
         isDragging_ = false;
         setCursor(Qt::ArrowCursor);
+        event->accept();
         return;
     }
+    if (event->button() == Qt::LeftButton && leftPressed_) {
+        leftPressed_ = false;
+        // 移动距离小于阈值视为「单击」→ 选中蜡烛
+        const int dist = (event->pos() - pressPos_).manhattanLength();
+        if (dist < 5) {
+            const int index = barIndexAt(event->pos());
+            if (index >= 0) {
+                selectBar(index);
+                emit barSelected(index, bars_[index]);
+            } else {
+                clearSelection();
+            }
+            event->accept();
+            return;
+        }
+    }
     QChartView::mouseReleaseEvent(event);
+}
+
+void KLineChart::leaveEvent(QEvent* event) {
+    if (crossHairV_) crossHairV_->hide();
+    if (crossHairH_) crossHairH_->hide();
+    if (tooltip_) tooltip_->hide();
+    emit hoverLeft();
+    QChartView::leaveEvent(event);
+}
+
+// ── 选时点交互辅助 ──────────────────────────────────
+
+int KLineChart::barIndexAt(const QPointF& pos) const {
+    if (!candleSeries_ || bars_.isEmpty()) return -1;
+    const QPointF value = chart_->mapToValue(pos, candleSeries_);
+    const qint64 targetTs = static_cast<qint64>(value.x());
+
+    int best = -1;
+    qint64 bestDiff = std::numeric_limits<qint64>::max();
+    for (int i = 0; i < bars_.size(); ++i) {
+        const qint64 ts = dateToQDateTime(bars_[i].date).toMSecsSinceEpoch();
+        const qint64 diff = qAbs(ts - targetTs);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = i;
+        }
+    }
+    return best;
+}
+
+void KLineChart::updateCrosshair(const QPointF& pos) {
+    if (!crossHairV_ || !crossHairH_) return;
+    const QPointF scenePos = mapToScene(pos.toPoint());
+    const QRectF plot = chart_->plotArea();
+    if (!plot.contains(scenePos)) {
+        crossHairV_->hide();
+        crossHairH_->hide();
+        if (tooltip_) tooltip_->hide();
+        return;
+    }
+    crossHairV_->setLine(scenePos.x(), plot.top(), scenePos.x(), plot.bottom());
+    crossHairH_->setLine(plot.left(), scenePos.y(), plot.right(), scenePos.y());
+    crossHairV_->show();
+    crossHairH_->show();
+
+    if (tooltip_) {
+        const int index = barIndexAt(pos);
+        if (index >= 0 && index < bars_.size()) {
+            const auto& bar = bars_[index];
+            tooltip_->setText(QString("%1\nO:%2  H:%3\nL:%4  C:%5")
+                .arg(bar.date)
+                .arg(bar.open, 0, 'f', 2)
+                .arg(bar.high, 0, 'f', 2)
+                .arg(bar.low, 0, 'f', 2)
+                .arg(bar.close, 0, 'f', 2));
+            // 提示框放在光标上方，避免遮住下方的蜡烛
+            tooltip_->setPos(scenePos.x() + 14, scenePos.y() - 64);
+            tooltip_->show();
+        } else {
+            tooltip_->hide();
+        }
+    }
+}
+
+void KLineChart::updateSelectionLine() {
+    if (!selectionLine_) return;
+    if (selectedIndex_ < 0 || selectedIndex_ >= bars_.size()) {
+        selectionLine_->hide();
+        return;
+    }
+    const qint64 ts = dateToQDateTime(bars_[selectedIndex_].date).toMSecsSinceEpoch();
+    const QPointF widgetPos = chart_->mapToPosition(QPointF(ts, 0), candleSeries_);
+    const QPointF scenePos = mapToScene(widgetPos.toPoint());
+    const QRectF plot = chart_->plotArea();
+    selectionLine_->setLine(scenePos.x(), plot.top(), scenePos.x(), plot.bottom());
+    selectionLine_->show();
+}
+
+void KLineChart::selectBar(int index) {
+    if (index < 0 || index >= bars_.size()) {
+        clearSelection();
+        return;
+    }
+    selectedIndex_ = index;
+    updateSelectionLine();
+}
+
+void KLineChart::clearSelection() {
+    selectedIndex_ = -1;
+    if (selectionLine_) selectionLine_->hide();
+}
+
+void KLineChart::highlightDate(const QString& date) {
+    for (int i = 0; i < bars_.size(); ++i) {
+        if (bars_[i].date == date) {
+            selectBar(i);
+            return;
+        }
+    }
+}
+
+void KLineChart::addTradeMarker(const QString& date, bool isBuy) {
+    if (!chart_ || !axisX_ || !axisY_) return;
+    const qint64 ts = dateToQDateTime(date).toMSecsSinceEpoch();
+    if (!tradeMarkers_) {
+        tradeMarkers_ = new QScatterSeries();
+        tradeMarkers_->setMarkerSize(12.0);
+        chart_->addSeries(tradeMarkers_);
+        tradeMarkers_->attachAxis(axisX_);
+        tradeMarkers_->attachAxis(axisY_);
+    }
+    // 用收盘价作为标记的 Y 位置（在选中蜡烛上）
+    double price = 0.0;
+    for (const auto& bar : bars_) {
+        if (bar.date == date) { price = bar.close; break; }
+    }
+    tradeMarkers_->append(ts, price);
+}
+
+void KLineChart::clearTradeMarkers() {
+    if (tradeMarkers_) {
+        tradeMarkers_->clear();
+    }
 }
 
 // ── 辅助 ────────────────────────────────────────────
