@@ -2,6 +2,11 @@
 #include "simulation/HistoricalPriceSeries.h"
 #include "simulation/InvestmentExperiment.h"
 #include "simulation/Ledger.h"
+#include "analysis/BehaviorAnalyzer.h"
+#include "trading/RiskEngine.h"
+#include "trading/OrderService.h"
+#include "trading/PaperExecutionGateway.h"
+#include "market/SymbolResolver.h"
 
 #include <cmath>
 #include <iostream>
@@ -313,6 +318,140 @@ void testHistoricalPriceSeriesFailures()
            "invalid adjusted historical close rejected");
 }
 
+void testBehaviorAnalyzer()
+{
+    using namespace fininsight::analysis;
+    using namespace fininsight::simulation;
+    EvidenceSnapshot evidence;
+    evidence.startTimestampMs = 0;
+    evidence.endTimestampMs = 5 * 86400000;
+    evidence.maxDrawdown = 0.15;
+    evidence.drawdownStartTimestampMs = 2 * 86400000;
+    evidence.drawdownEndTimestampMs = 4 * 86400000;
+    evidence.trades = {
+        {1, TradeSide::Buy, "AAPL", 10, 100.0, 0.0, 2 * 86400000, 0.0},
+        {2, TradeSide::Buy, "AAPL", 10, 100.0, 0.0, 3 * 86400000, 0.0},
+        {3, TradeSide::Sell, "AAPL", 10, 101.0, 0.0, 4 * 86400000, 10.0},
+        {4, TradeSide::Sell, "AAPL", 10, 90.0, 0.0, 4 * 86400000, -100.0},
+    };
+    const auto report = analyzeBehavior(evidence);
+    expect(report.tradeCount == 4, "behavior trade count");
+    expect(report.symbolCount == 1, "behavior symbol count");
+    expectNear(report.maxSymbolConcentration, 1.0, "behavior concentration");
+    expect(report.tradesDuringDrawdown == 4, "behavior drawdown trades");
+    expect(report.findings.size() == 3, "behavior findings are deterministic");
+}
+
+void testTradingStateAndRisk()
+{
+    using namespace fininsight::trading;
+    Order order;
+    order.request.quantity = 10;
+    order.status = OrderStatus::Accepted;
+    expect(statusAfterFill(order, 4) == OrderStatus::PartiallyFilled, "partial fill status");
+    order.filledQuantity = 4;
+    expect(statusAfterFill(order, 6) == OrderStatus::Filled, "complete fill status");
+    expect(isTerminal(OrderStatus::Filled), "filled is terminal");
+    expect(!isTerminal(OrderStatus::Unknown), "unknown requires reconciliation");
+
+    RiskLimits limits;
+    limits.maxOrderNotional = 1000.0;
+    limits.maxOrderQuantity = 20;
+    limits.maxSymbolExposure = 1500.0;
+    limits.maxDailyOrders = 5;
+    limits.maxDailyLoss = 200.0;
+    limits.quoteFreshnessMs = 1000;
+    RiskEngine engine(limits);
+    OrderRequest request;
+    request.clientOrderId = "order-1";
+    request.symbol = "AAPL";
+    request.quantity = 5;
+    RiskContext context;
+    expect(engine.check(request, 100.0, context).approved, "valid order approved");
+
+    context.killSwitch = true;
+    expect(!engine.check(request, 100.0, context).approved, "kill switch rejects");
+    context.killSwitch = false;
+    context.marketOpen = false;
+    expect(!engine.check(request, 100.0, context).approved, "closed market rejects");
+    context.marketOpen = true;
+    context.quoteAgeMs = 1001;
+    expect(!engine.check(request, 100.0, context).approved, "stale quote rejects");
+    context.quoteAgeMs = 0;
+    context.dailyOrderCount = 5;
+    expect(!engine.check(request, 100.0, context).approved, "daily count rejects");
+    context.dailyOrderCount = 0;
+    context.dailyRealizedLoss = 200.0;
+    expect(!engine.check(request, 100.0, context).approved, "daily loss rejects");
+    context.dailyRealizedLoss = 0.0;
+    context.currentSymbolExposure = 1100.0;
+    expect(!engine.check(request, 100.0, context).approved, "symbol exposure rejects");
+    context.currentSymbolExposure = 0.0;
+    request.quantity = 21;
+    expect(!engine.check(request, 100.0, context).approved, "quantity rejects");
+}
+
+void testPaperExecutionAndOrderService()
+{
+    using namespace fininsight::trading;
+    PaperExecutionGateway gateway(10000.0, 0.001);
+    gateway.onQuote("AAPL", 100.0, 1000);
+    OrderService service(gateway, RiskEngine{});
+    RiskContext context;
+
+    OrderRequest buy;
+    buy.clientOrderId = "buy-1"; buy.symbol = "AAPL"; buy.quantity = 10; buy.timestampMs = 1000;
+    const auto filled = service.submit(buy, 100.0, context);
+    expect(filled.status == OrderStatus::Filled, "paper market buy fills");
+    expect(gateway.position("AAPL") == 10, "paper position updated");
+    expectNear(gateway.account().cash, 8999.0, "paper fee and cash applied");
+
+    const auto duplicate = service.submit(buy, 100.0, context);
+    expect(duplicate.status == OrderStatus::Rejected, "duplicate client order rejected");
+
+    OrderRequest limit;
+    limit.clientOrderId = "limit-1"; limit.symbol = "AAPL"; limit.quantity = 2;
+    limit.type = OrderType::Limit; limit.limitPrice = 95.0;
+    const auto pending = service.submit(limit, 100.0, context);
+    expect(pending.status == OrderStatus::Accepted, "paper limit waits for price");
+    gateway.onQuote("AAPL", 94.0, 2000);
+    expect(gateway.find("limit-1")->status == OrderStatus::Filled, "paper limit fills on tick");
+
+    OrderRequest cancelOrder;
+    cancelOrder.clientOrderId = "cancel-1"; cancelOrder.symbol = "AAPL"; cancelOrder.quantity = 1;
+    cancelOrder.type = OrderType::Limit; cancelOrder.limitPrice = 80.0;
+    expect(service.submit(cancelOrder, 94.0, context).status == OrderStatus::Accepted, "cancel target accepted");
+    expect(service.cancel("cancel-1"), "paper order cancelled");
+    gateway.onQuote("AAPL", 79.0, 3000);
+    expect(gateway.find("cancel-1")->status == OrderStatus::Cancelled, "cancelled order remains cancelled");
+}
+
+void testSymbolResolver()
+{
+    using namespace fininsight::market;
+    SymbolResolver resolver;
+    Instrument apple;
+    apple.canonicalSymbol = " aapl ";
+    apple.exchange = "NASDAQ";
+    apple.currency = "USD";
+    apple.aliases = {"apple", "us:aapl"};
+    apple.sourceSymbols = {{InstrumentSource::Yahoo, "aapl"}, {InstrumentSource::Alpaca, "AAPL"}};
+    expect(resolver.registerInstrument(apple).success, "instrument registration");
+    expect(SymbolResolver::normalize(" msft ") == "MSFT", "resolver normalization");
+    expect(resolver.resolve(" Apple " )->canonicalSymbol == "AAPL", "instrument alias resolution");
+    expect(resolver.sourceSymbol("us:aapl", InstrumentSource::Yahoo) == std::optional<std::string>("AAPL"), "source symbol mapping");
+
+    Instrument conflict; conflict.canonicalSymbol="MSFT"; conflict.exchange="NASDAQ"; conflict.currency="USD"; conflict.aliases={"APPLE"}; conflict.sourceSymbols={{InstrumentSource::Alpaca,"MSFT"}};
+    expect(!resolver.registerInstrument(conflict).success, "alias conflict rejected");
+    expect(!resolver.sourceSymbol("AAPL", static_cast<InstrumentSource>(99)).has_value(), "missing source mapping fails");
+
+    apple.aliases = {"apple-inc"};
+    expect(resolver.registerInstrument(apple).success, "instrument update");
+    expect(!resolver.resolve("apple").has_value(), "stale alias removed on update");
+    expect(resolver.resolve("APPLE-INC").has_value(), "updated alias resolves");
+    expect(resolver.instruments().size() == 1, "instrument update does not duplicate");
+}
+
 } // namespace
 
 int main()
@@ -325,6 +464,10 @@ int main()
     testBuyAndHoldExperimentFailures();
     testHistoricalPriceSeries();
     testHistoricalPriceSeriesFailures();
+    testBehaviorAnalyzer();
+    testTradingStateAndRisk();
+    testPaperExecutionAndOrderService();
+    testSymbolResolver();
 
     if (failures == 0) {
         std::cout << "All core tests passed\n";

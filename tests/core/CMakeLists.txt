@@ -11,6 +11,13 @@ add_executable(fininsight_core_tests
     ../../src/simulation/Ledger.cpp
     ../../src/simulation/InvestmentExperiment.cpp
     ../../src/simulation/HistoricalPriceSeries.cpp
+    ../../src/analysis/BehaviorAnalyzer.cpp
+    ../../src/analysis/ReviewGenerator.cpp
+    ../../src/trading/TradingTypes.cpp
+    ../../src/trading/RiskEngine.cpp
+    ../../src/trading/PaperExecutionGateway.cpp
+    ../../src/market/SymbolResolver.cpp
+    ../../src/trading/OrderService.cpp
 )
 target_include_directories(fininsight_core_tests PRIVATE ../../src)
 
