@@ -19,6 +19,7 @@
 #include "monitoring/LatencyTracker.h"
 #include "panels/HealthPanel.h"
 #include "analysis/BehaviorAnalyzer.h"
+#include "dsl/Evaluator.h"
 #include "storage/Database.h"
 #include "storage/EvidenceSnapshotRepository.h"
 #include "storage/TradingOrderRepository.h"
@@ -32,6 +33,7 @@
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QLabel>
+#include <QPalette>
 #include <QVBoxLayout>
 
 // ── 全局样式表 — 清晰专业浅色主题 ──────────────────
@@ -239,6 +241,34 @@ static const char* kGlobalStyle = R"(
     /* Dock 面板标签 — 原生渲染，不干预 */
 )";
 
+// —— 浅色调色板（与 main.cpp 的 applyLightTheme 配色保持一致） ——
+// Qt ADS 内置样式(见 qtads src/stylesheets/default.css)对 dock 组件大量使用
+// `palette(window)` / `palette(dark)` / `palette(light)` 等动态色，这些会解析为
+// "应用该样式表的 widget 当前的 QPalette"。深色 Windows 下若 dock 容器继承了系统
+// 深色 palette，tab 与停靠区背景就会变黑。这里给 dock 管理器显式覆盖浅色 palette，
+// 其后代 widget 会自动继承，使内置样式的 palette(x) 全部解析成浅色系。
+static QPalette makeLightPalette()
+{
+    QPalette p;
+    p.setColor(QPalette::Window,          QColor("#ffffff"));
+    p.setColor(QPalette::WindowText,      QColor("#1e1e1e"));
+    p.setColor(QPalette::Base,            QColor("#ffffff"));
+    p.setColor(QPalette::AlternateBase,   QColor("#f8f9fa"));
+    p.setColor(QPalette::Text,            QColor("#1e1e1e"));
+    p.setColor(QPalette::Button,          QColor("#ffffff"));
+    p.setColor(QPalette::ButtonText,      QColor("#1e1e1e"));
+    p.setColor(QPalette::Highlight,       QColor("#1a73e8"));
+    p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+    p.setColor(QPalette::PlaceholderText, QColor("#9aa0a6"));
+    p.setColor(QPalette::Light,           QColor("#f8f9fa"));
+    p.setColor(QPalette::Midlight,        QColor("#f0f1f3"));
+    p.setColor(QPalette::Dark,            QColor("#5f6368"));
+    p.setColor(QPalette::Mid,             QColor("#dadce0"));
+    p.setColor(QPalette::ToolTipBase,     QColor("#fdfcff"));
+    p.setColor(QPalette::ToolTipText,     QColor("#1e1e1e"));
+    return p;
+}
+
 MainWindow::MainWindow(QWidget* parent)
     : QWidget(parent)
 {
@@ -246,7 +276,8 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle("FinInsight");
     setMinimumSize(1024, 640);
 
-    // 应用暗色主题
+    // 应用浅色主题样式（配合 main.cpp 的 applyLightTheme 固定浅色调色板，
+    // 使界面不随 Windows 深浅色模式变化）
     qobject_cast<QApplication*>(QCoreApplication::instance())
         ->setStyleSheet(QLatin1String(kGlobalStyle));
 
@@ -338,6 +369,9 @@ void MainWindow::setupUi()
     layout->addWidget(search_bar_);
 
     dock_manager_ = new ads::CDockManager(this);
+    // 强制 dock 树使用浅色调色板：qtads 内置 CSS 的 palette(window/dark/light)
+    // 会取 dock widget 的 QPalette，若不覆盖，深色 Windows 下 tab/停靠区背景会变黑。
+    dock_manager_->setPalette(makeLightPalette());
     layout->addWidget(dock_manager_);
 
     setupPanels();
@@ -479,6 +513,47 @@ void MainWindow::setupPanels()
     connect(portfolio_, &fininsight::panels::PortfolioPanel::tradeSelected,
             this, [this](const QString& date) {
         kline_chart_->highlightDate(date);
+    });
+
+    // —— 策略体检：DSL 表达式对当前 K 线求值 ——
+    connect(detail_panel_, &fininsight::panels::DetailPanel::strategyCheckRequested,
+            this, [this](const QString& expression) {
+        const auto& bars = kline_chart_->bars();
+        if (bars.isEmpty()) {
+            detail_panel_->setCheckResult(false, false,
+                I18n::instance().t("Load a stock first"));
+            return;
+        }
+        // QVector<KLineData> → std::vector<double> OHLCV（喂给 DSL 求值器）
+        std::vector<double> opens, highs, lows, closes, volumes;
+        opens.reserve(bars.size());   highs.reserve(bars.size());
+        lows.reserve(bars.size());    closes.reserve(bars.size());
+        volumes.reserve(bars.size());
+        for (const auto& b : bars) {
+            opens.push_back(b.open);
+            highs.push_back(b.high);
+            lows.push_back(b.low);
+            closes.push_back(b.close);
+            volumes.push_back(static_cast<double>(b.volume));
+        }
+        fininsight::dsl::Evaluator eval;
+        eval.setData(opens, highs, lows, closes, volumes);
+        auto r = eval.evaluate(expression);
+        if (!r.ok) {
+            detail_panel_->setCheckResult(false, false,
+                I18n::instance().t("Expression Error") + ": " + r.error);
+            return;
+        }
+        // 比较/逻辑表达式结果为 0.0 / 1.0 → 命中与否；其余按数值展示
+        const double v = r.value;
+        if (v >= 0.999 && v <= 1.001) {
+            detail_panel_->setCheckResult(true, true, {});
+        } else if (v >= -0.001 && v <= 0.001) {
+            detail_panel_->setCheckResult(true, false, {});
+        } else {
+            detail_panel_->setCheckResult(true, false,
+                QString::number(v, 'f', 4));
+        }
     });
 
     data_menu_ = menu_bar_->addMenu(I18n::instance().t("Data"));

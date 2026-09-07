@@ -2,7 +2,11 @@
 #include "core/I18n.h"
 
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QDateTime>
 
@@ -35,6 +39,35 @@ DetailPanel::DetailPanel(QWidget* parent)
     }
 
     layout->addWidget(table_);
+
+    // —— 策略体检（DSL 表达式） ——
+    checkGroup_ = new QGroupBox;
+    auto* checkLayout = new QVBoxLayout(checkGroup_);
+    checkLayout->setContentsMargins(8, 8, 8, 8);
+    checkLayout->setSpacing(6);
+
+    checkEdit_ = new QLineEdit;
+    checkEdit_->setPlaceholderText("MACD > 0 AND RSI(14) < 30");
+    checkLayout->addWidget(checkEdit_);
+
+    btnCheck_ = new QPushButton;
+    btnCheck_->setCursor(Qt::PointingHandCursor);
+    checkLayout->addWidget(btnCheck_);
+
+    checkResult_ = new QLabel;
+    checkResult_->setWordWrap(true);
+    checkResult_->setStyleSheet("color:#5f6368; font-size:12px;");
+    checkResult_->setText("—");
+    checkLayout->addWidget(checkResult_);
+
+    layout->addWidget(checkGroup_);
+    layout->addStretch(1);
+
+    connect(btnCheck_, &QPushButton::clicked,
+            this, &DetailPanel::onCheckClicked);
+    connect(checkEdit_, &QLineEdit::returnPressed,
+            this, &DetailPanel::onCheckClicked);
+
     retranslateUi();
 }
 
@@ -43,6 +76,11 @@ void DetailPanel::retranslateUi()
     titleLabel_->setText(I18n::instance().t("Detail"));
     table_->setHorizontalHeaderLabels({I18n::instance().t("Field"),
                                        I18n::instance().t("Value")});
+
+    if (checkGroup_) {
+        checkGroup_->setTitle(I18n::instance().t("Strategy Check"));
+        btnCheck_->setText(I18n::instance().t("Check"));
+    }
 
     const QStringList fields = {
         I18n::instance().t("Symbol"), I18n::instance().t("Name"),
@@ -56,6 +94,7 @@ void DetailPanel::retranslateUi()
 
 void DetailPanel::updateQuote(const datahub::QuoteData& quote) {
     if (!table_) return;
+    currentSymbol_ = quote.symbol;
 
     auto setRow = [&](int row, const QString& val, const QColor& color = Qt::black) {
         auto* item = table_->item(row, 1);
@@ -83,6 +122,28 @@ void DetailPanel::clear() {
         auto* item = table_->item(i, 1);
         if (item) item->setText("-");
     }
+}
+
+void DetailPanel::onCheckClicked() {
+    const QString expr = checkEdit_->text().trimmed();
+    if (!expr.isEmpty()) emit strategyCheckRequested(expr);
+}
+
+void DetailPanel::setCheckResult(bool ok, bool hit, const QString& text) {
+    if (!checkResult_) return;
+    if (!ok) {
+        checkResult_->setStyleSheet("color:#c5221f; font-size:12px;");
+        checkResult_->setText(text);
+        return;
+    }
+    // ok：区分「布尔条件命中」与「纯数值表达式」
+    checkResult_->setStyleSheet(
+        hit ? "color:#188038; font-size:12px;"
+            : "color:#5f6368; font-size:12px;");
+    QString prefix = text.isEmpty()
+        ? (hit ? I18n::instance().t("Hit") : I18n::instance().t("Not Hit"))
+        : text;
+    checkResult_->setText(prefix);
 }
 
 } // namespace fininsight::panels

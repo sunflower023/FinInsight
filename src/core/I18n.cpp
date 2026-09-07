@@ -29,6 +29,14 @@ QHash<QString, QString> buildTranslations()
     t["Notifications"] = "通知";
     t["Health"] = "健康监控";
 
+    // ── 策略体检（DSL 表达式） ─────────────────
+    t["Strategy Check"] = "策略体检";
+    t["Check"] = "体检";
+    t["Hit"] = "命中";
+    t["Not Hit"] = "未命中";
+    t["Load a stock first"] = "请先加载一只股票";
+    t["Expression Error"] = "表达式错误";
+
     // ── 状态栏 / 实时流 ───────────────────────
     t["Loading..."] = "加载中...";
     t["Realtime: off"] = "实时：关闭";

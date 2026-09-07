@@ -42,6 +42,9 @@ public:
     /// 设置 K 线数据并重绘
     void setData(const QVector<datahub::KLineData>& bars);
 
+    /// 当前图表持有的 K 线数据（供策略体检等外部逻辑只读使用）
+    const QVector<datahub::KLineData>& bars() const { return bars_; }
+
     /// 叠加移动平均线
     void addMA(int period, const QColor& color = Qt::blue);
 
