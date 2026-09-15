@@ -199,4 +199,3 @@ WebSocket 传输层由 `network::WebSocketClient` 提供，当前已有实验性
 - [`STORAGE.md`](STORAGE.md)：SQLite、迁移和 Repository。
 - [`CHARTS.md`](CHARTS.md)：K线与指标。
 - [`DSL.md`](DSL.md)：表达式语法和求值。
-- [`../agent/ROADMAP.md`](../agent/ROADMAP.md)：后续模拟投资实验室路线。

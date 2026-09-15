@@ -79,8 +79,6 @@ cmake --build --preset win-dev
 
 - Yahoo 和 EastMoney Producer 已使用可取消的异步请求；Aggregator 已使用异步状态机，旧同步接口暂作为兼容实现保留。
 - `Aggregator` 已有异步竞速原型，并按标的路由数据源；尚未接入主流程，不能视为生产级竞速器。
-- 组合交易面板已接入纯 C++ Ledger，支持当前报价买卖、手续费、持仓估值和盈亏展示；状态仍仅在内存中，尚未持久化。
-- DSL 尚未接入策略回测流程。
+- 组合交易面板已接入纯 C++ Ledger，支持当前报价买卖、手续费、持仓估值和盈亏展示；交易订单通过 TradingOrderRepository 落库（V004 迁移）。
+- DSL 已接入详情面板「策略体检」，对当前选中股票的 K 线求值并反馈命中结果。
 - 指标和解析器应优先通过单元测试覆盖后再扩展。
-
-更详细的后续工作约束见 [`agent/README.md`](../agent/README.md)。
