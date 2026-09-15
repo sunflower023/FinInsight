@@ -24,3 +24,6 @@ qrc_*.cpp
 Thumbs.db
 third_party/
 .workbuddy/
+
+# internal development notes (not part of the public project)
+agent/
